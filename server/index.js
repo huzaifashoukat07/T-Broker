@@ -1,4 +1,4 @@
-// T-Broker server: REST API + WebSocket live feed + trade settlement.
+// NovaTrade server: REST API + WebSocket live feed + trade settlement.
 
 const path = require('path');
 const http = require('http');
@@ -245,5 +245,5 @@ for (const user of store.users.values()) {
 
 market.start();
 server.listen(PORT, () => {
-  console.log(`T-Broker running on http://localhost:${PORT}`);
+  console.log(`NovaTrade running on http://localhost:${PORT}`);
 });

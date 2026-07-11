@@ -1,4 +1,4 @@
-# T-Broker 📈
+# NovaTrade 📈
 
 A **Quotex-style online trading platform** — binary options trading with live simulated markets, real-time candlestick charts, demo & live accounts, and instant trade settlement.
 

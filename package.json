@@ -1,7 +1,7 @@
 {
-  "name": "t-broker",
+  "name": "novatrade",
   "version": "1.0.0",
-  "description": "T-Broker — a Quotex-style binary options trading platform with live simulated markets, demo & live accounts, and real-time trade settlement.",
+  "description": "NovaTrade — a Quotex-style binary options trading platform with live simulated markets, demo & live accounts, and real-time trade settlement.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
