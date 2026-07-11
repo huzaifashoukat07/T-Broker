@@ -101,6 +101,12 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .asset-btn:hover { border-color: var(--accent); }
 .asset-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); box-shadow: 0 0 8px var(--up); }
 .asset-btn-payout { color: var(--up); font-size: 12px; font-weight: 700; }
+.live-badge {
+  background: rgba(246,70,93,.14); color: var(--down);
+  font-size: 10px; font-weight: 800; letter-spacing: .6px;
+  padding: 2px 7px; border-radius: 6px; animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 .asset-btn svg { color: var(--muted); }
 
 .balance-box {

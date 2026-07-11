@@ -7,6 +7,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 
 const { Market, TIMEFRAMES } = require('./market');
+const { LiveFeed } = require('./livefeed');
 const { Store, ApiError } = require('./store');
 
 const PORT = process.env.PORT || 3000;
@@ -244,6 +245,11 @@ for (const user of store.users.values()) {
 }
 
 market.start();
+
+// Real crypto prices from Binance, with automatic fallback to simulation.
+const liveFeed = new LiveFeed(market);
+liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
+
 server.listen(PORT, () => {
   console.log(`NovaTrade running on http://localhost:${PORT}`);
 });

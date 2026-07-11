@@ -9,9 +9,9 @@ const ASSETS = [
   { id: 'AUDUSD',  name: 'AUD/USD',        group: 'Currencies',   price: 0.6553,  vol: 0.00007, decimals: 5, payout: 0.80 },
   { id: 'USDCAD',  name: 'USD/CAD',        group: 'Currencies',   price: 1.3724,  vol: 0.00006, decimals: 5, payout: 0.80 },
   { id: 'EURGBP',  name: 'EUR/GBP',        group: 'Currencies',   price: 0.8579,  vol: 0.00005, decimals: 5, payout: 0.78 },
-  { id: 'BTCUSD',  name: 'Bitcoin',        group: 'Crypto',       price: 64230,   vol: 0.00030, decimals: 2, payout: 0.90 },
-  { id: 'ETHUSD',  name: 'Ethereum',       group: 'Crypto',       price: 3412.5,  vol: 0.00035, decimals: 2, payout: 0.88 },
-  { id: 'SOLUSD',  name: 'Solana',         group: 'Crypto',       price: 146.8,   vol: 0.00045, decimals: 3, payout: 0.85 },
+  { id: 'BTCUSD',  name: 'Bitcoin',        group: 'Crypto',       price: 64230,   vol: 0.00030, decimals: 2, payout: 0.90, binance: 'BTCUSDT' },
+  { id: 'ETHUSD',  name: 'Ethereum',       group: 'Crypto',       price: 3412.5,  vol: 0.00035, decimals: 2, payout: 0.88, binance: 'ETHUSDT' },
+  { id: 'SOLUSD',  name: 'Solana',         group: 'Crypto',       price: 146.8,   vol: 0.00045, decimals: 3, payout: 0.85, binance: 'SOLUSDT' },
   { id: 'XAUUSD',  name: 'Gold',           group: 'Commodities',  price: 2352.4,  vol: 0.00010, decimals: 2, payout: 0.86 },
   { id: 'XAGUSD',  name: 'Silver',         group: 'Commodities',  price: 29.54,   vol: 0.00016, decimals: 3, payout: 0.82 },
   { id: 'UKBRENT', name: 'Brent Oil',      group: 'Commodities',  price: 84.12,   vol: 0.00020, decimals: 3, payout: 0.80 },
@@ -41,6 +41,7 @@ class Market {
         ...def,
         base: def.price,
         momentum: 0,
+        external: false, // true while a real live feed is driving this asset
         candles: Object.fromEntries(TIMEFRAMES.map((tf) => [tf, []])),
       });
     }
@@ -92,15 +93,60 @@ class Market {
       const tSec = Math.floor(Date.now() / 1000);
       const ticks = [];
       for (const a of this.assets.values()) {
-        const prev = a.price;
-        this.step(a);
-        this.applyTick(a, tSec);
-        ticks.push({ asset: a.id, price: round(a.price, a.decimals), dir: a.price > prev ? 1 : a.price < prev ? -1 : 0 });
+        if (!a.external) this.step(a);
+        this.applyTick(a, tSec); // for external assets this just keeps candle buckets contiguous
+        const prev = a.lastSent ?? a.price;
+        a.lastSent = a.price;
+        ticks.push({
+          asset: a.id,
+          price: round(a.price, a.decimals),
+          dir: a.price > prev ? 1 : a.price < prev ? -1 : 0,
+          live: a.external,
+        });
       }
       const payload = { time: Date.now(), ticks };
       for (const fn of this.listeners) fn(payload);
     }, TICK_MS);
     this.timer.unref?.();
+  }
+
+  // --- live feed integration ---------------------------------------------
+
+  isExternal(id) {
+    const a = this.assets.get(id);
+    return !!(a && a.external);
+  }
+
+  setExternalMode(id, on) {
+    const a = this.assets.get(id);
+    if (!a || a.external === on) return;
+    a.external = on;
+    // re-anchor the simulator to the current (real) price so a feed dropout
+    // continues smoothly instead of reverting toward the old base
+    a.base = a.price;
+    a.momentum = 0;
+  }
+
+  setExternalPrice(id, price, timeMs) {
+    const a = this.assets.get(id);
+    if (!a || !a.external) return;
+    a.price = price;
+    this.applyTick(a, Math.floor(timeMs / 1000));
+  }
+
+  replaceCandles(id, candlesByTf) {
+    const a = this.assets.get(id);
+    if (!a) return;
+    for (const tf of TIMEFRAMES) {
+      if (candlesByTf[tf] && candlesByTf[tf].length) {
+        a.candles[tf] = candlesByTf[tf].slice(-MAX_CANDLES);
+      }
+    }
+    const newest = a.candles[TIMEFRAMES[0]];
+    if (newest.length) {
+      a.price = newest[newest.length - 1].c;
+      a.base = a.price;
+    }
   }
 
   onTick(fn) {
@@ -125,6 +171,7 @@ class Market {
       payout: a.payout,
       decimals: a.decimals,
       price: round(a.price, a.decimals),
+      live: a.external,
     }));
   }
 

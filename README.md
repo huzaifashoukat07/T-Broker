@@ -30,7 +30,9 @@ A **Quotex-style online trading platform** — binary options trading with live 
 - 🏆 Daily top-traders leaderboard
 
 **Engine**
-- Simulated price feeds with momentum, news spikes and mean reversion — charts trend and consolidate like real markets
+- 🔴 **Real live crypto prices from Binance** — Bitcoin, Ethereum and Solana stream real market data (public endpoints, no API key needed); real candle history is loaded on startup and live assets show a pulsing LIVE badge
+- Automatic fallback: if Binance is unreachable (offline, blocked network), those assets seamlessly switch to the built-in simulator and recover when the feed returns
+- Simulated price feeds for the remaining assets with momentum, news spikes and mean reversion — charts trend and consolidate like real markets
 - WebSocket live feed (ticks + trade settlement pushes)
 - Server-side candle aggregation and trade settlement — no client-side price trust
 - JSON-file persistence; open trades survive server restarts
@@ -43,6 +45,16 @@ npm start
 ```
 
 Open **http://localhost:3000**, sign up (any email works — it's all local), and start trading on the demo account.
+
+### Live market data
+
+Crypto assets (BTC, ETH, SOL) automatically connect to Binance's public market-data endpoints — no account or API key required. If your network can't reach `data-api.binance.vision`, you can point the feed elsewhere:
+
+```bash
+BINANCE_REST=https://api.binance.com BINANCE_WS=wss://stream.binance.com:9443 npm start
+```
+
+If Binance can't be reached at all, those assets fall back to simulated prices automatically (and keep retrying in the background).
 
 ## Tech stack
 

@@ -140,6 +140,11 @@ function connectWS() {
 function onTicks(msg) {
   for (const t of msg.ticks) {
     state.prices[t.asset] = t;
+    const a = state.assets.find((x) => x.id === t.asset);
+    if (a && a.live !== t.live) {
+      a.live = t.live;
+      if (a === state.asset) renderAssetHeader();
+    }
     if (state.asset && t.asset === state.asset.id) {
       chart.tick(t.price, msg.time, t.dir);
       const el = $('#chart-price');
@@ -200,6 +205,7 @@ function syncChartTrades() {
 
 function renderAssetHeader() {
   $('#asset-btn-name').textContent = state.asset.name;
+  $('#asset-live').classList.toggle('hidden', !state.asset.live);
   $('#asset-btn-payout').textContent = Math.round(state.asset.payout * 100) + '%';
   $('#panel-asset-name').textContent = state.asset.name;
   $('#panel-payout').textContent = Math.round(state.asset.payout * 100) + '%';
@@ -232,7 +238,7 @@ function renderAssetList(filter = '') {
       const row = document.createElement('div');
       row.className = 'asset-row' + (a.id === state.asset.id ? ' active' : '');
       row.innerHTML = `
-        <span class="asset-row-name">${a.name}</span>
+        <span class="asset-row-name">${a.name}${a.live ? ' <span class="live-badge">● LIVE</span>' : ''}</span>
         <span class="asset-row-price" data-price="${a.id}">${(state.prices[a.id]?.price ?? a.price).toFixed(a.decimals)}</span>
         <span class="asset-row-payout">${Math.round(a.payout * 100)}%</span>`;
       row.addEventListener('click', () => selectAsset(a));
