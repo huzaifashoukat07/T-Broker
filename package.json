@@ -1,0 +1,18 @@
+{
+  "name": "t-broker",
+  "version": "1.0.0",
+  "description": "T-Broker — a Quotex-style binary options trading platform with live simulated markets, demo & live accounts, and real-time trade settlement.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}

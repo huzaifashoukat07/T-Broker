@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T-Broker — Online Trading Platform</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen" class="auth-screen hidden">
+  <div class="auth-bg"></div>
+  <div class="auth-card">
+    <div class="auth-logo">T-<span>BROKER</span></div>
+    <p class="auth-tagline">Trade Forex, Crypto, Commodities &amp; Stocks with payouts up to 90%</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Log in</button>
+      <button class="auth-tab" data-tab="register">Sign up</button>
+    </div>
+    <form id="auth-form" autocomplete="on">
+      <div class="field hidden" id="field-name">
+        <label>Name</label>
+        <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="auth-password" placeholder="••••••••" required minlength="6" autocomplete="current-password">
+      </div>
+      <div class="auth-error hidden" id="auth-error"></div>
+      <button type="submit" class="btn-primary" id="auth-submit">Log in</button>
+    </form>
+    <p class="auth-note">New accounts get a free <b>$10,000</b> demo balance. Practice risk-free.</p>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" class="app hidden">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="logo">T-<span>BROKER</span></div>
+
+    <button class="asset-btn" id="asset-btn">
+      <span class="asset-dot" id="asset-dot"></span>
+      <span class="asset-btn-name" id="asset-btn-name">EUR/USD</span>
+      <span class="asset-btn-payout" id="asset-btn-payout">85%</span>
+      <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+    </button>
+
+    <div class="topbar-spacer"></div>
+
+    <div class="balance-box" id="balance-box">
+      <div class="balance-label" id="balance-label">DEMO ACCOUNT</div>
+      <div class="balance-amount" id="balance-amount">$10,000.00</div>
+      <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      <div class="balance-menu hidden" id="balance-menu">
+        <div class="balance-option" data-account="demo">
+          <div><div class="bo-name">Demo account</div><div class="bo-amount" id="menu-demo-amount">$10,000.00</div></div>
+          <span class="bo-check" id="check-demo">✓</span>
+        </div>
+        <div class="balance-option" data-account="live">
+          <div><div class="bo-name">Live account</div><div class="bo-amount" id="menu-live-amount">$0.00</div></div>
+          <span class="bo-check hidden" id="check-live">✓</span>
+        </div>
+        <button class="balance-reset" id="reset-demo-btn">↻ Top up demo to $10,000</button>
+      </div>
+    </div>
+
+    <button class="btn-deposit" id="deposit-btn">Deposit</button>
+    <button class="btn-withdraw" id="withdraw-btn">Withdrawal</button>
+
+    <div class="user-box" id="user-box">
+      <div class="avatar" id="avatar">T</div>
+      <div class="user-menu hidden" id="user-menu">
+        <div class="um-name" id="um-name">Trader</div>
+        <div class="um-email" id="um-email">you@example.com</div>
+        <hr>
+        <button id="tx-btn">Transactions</button>
+        <button id="logout-btn" class="danger">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- Left rail -->
+    <nav class="rail">
+      <button class="rail-btn active" title="Trade" data-panel="trade">
+        <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 6h3.5V9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Trade</span>
+      </button>
+      <button class="rail-btn" title="Leaderboard" id="rail-top">
+        <svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M6 4h12v4a6 6 0 01-12 0V4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 6H4a2 2 0 002 4M18 6h2a2 2 0 01-2 4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <span>Top</span>
+      </button>
+      <button class="rail-btn" title="Transactions" id="rail-tx">
+        <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18" stroke="currentColor" stroke-width="2"/></svg>
+        <span>Wallet</span>
+      </button>
+      <button class="rail-btn" title="Help" id="rail-help">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.8.6-1.5 1-1.5 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>
+        <span>Help</span>
+      </button>
+    </nav>
+
+    <!-- Chart -->
+    <main class="chart-area">
+      <div class="chart-head">
+        <div class="tf-group" id="tf-group"></div>
+        <div class="chart-asset-info">
+          <span id="chart-price" class="chart-price">—</span>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </main>
+
+    <!-- Trade panel -->
+    <aside class="panel">
+      <div class="panel-asset">
+        <div class="pa-name" id="panel-asset-name">EUR/USD</div>
+        <div class="pa-payout">Payout <b id="panel-payout">85%</b></div>
+      </div>
+
+      <div class="control">
+        <label>Time</label>
+        <div class="stepper">
+          <button id="time-minus">−</button>
+          <div class="stepper-value" id="time-value">1:00</div>
+          <button id="time-plus">+</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Amount</label>
+        <div class="stepper">
+          <button id="amt-minus">−</button>
+          <div class="stepper-value"><span class="cur">$</span><input id="amt-input" type="number" min="1" step="1" value="10"></div>
+          <button id="amt-plus">+</button>
+        </div>
+      </div>
+
+      <div class="profit-preview">
+        <div class="pp-label">Your payout</div>
+        <div class="pp-value" id="profit-preview">$18.50</div>
+        <div class="pp-pct" id="profit-pct">+85%</div>
+      </div>
+
+      <button class="btn-up" id="btn-up">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5l7 8h-4v6h-6v-6H5l7-8z" fill="currentColor"/></svg>
+        Up
+      </button>
+      <button class="btn-down" id="btn-down">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 19l-7-8h4V5h6v6h4l-7 8z" fill="currentColor"/></svg>
+        Down
+      </button>
+
+      <div class="trades">
+        <div class="trades-tabs">
+          <button class="trades-tab active" data-list="open">Trades <span class="badge" id="open-count">0</span></button>
+          <button class="trades-tab" data-list="closed">History</button>
+        </div>
+        <div class="trades-list" id="trades-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Mobile trade bar -->
+  <div class="mobile-bar">
+    <button class="btn-down" id="m-btn-down">▼ Down</button>
+    <button class="btn-up" id="m-btn-up">▲ Up</button>
+  </div>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-overlay hidden" id="modal-overlay">
+
+  <div class="modal hidden" id="asset-modal">
+    <div class="modal-head"><h3>Select asset</h3><button class="modal-close">✕</button></div>
+    <input type="text" class="modal-search" id="asset-search" placeholder="Search assets…">
+    <div class="asset-list" id="asset-list"></div>
+  </div>
+
+  <div class="modal hidden" id="deposit-modal">
+    <div class="modal-head"><h3>Deposit</h3><button class="modal-close">✕</button></div>
+    <p class="modal-sub">Instant top-up of your live account <i>(simulated — no real money involved)</i>.</p>
+    <div class="quick-amounts" id="deposit-quick">
+      <button data-amt="50">$50</button><button data-amt="100">$100</button>
+      <button data-amt="500">$500</button><button data-amt="1000">$1,000</button>
+    </div>
+    <div class="field"><label>Amount (USD)</label><input type="number" id="deposit-amount" min="10" max="50000" value="100"></div>
+    <div class="field"><label>Payment method</label>
+      <select id="deposit-method">
+        <option value="card">💳 Visa / Mastercard</option>
+        <option value="crypto">₿ Crypto (BTC/USDT)</option>
+        <option value="bank">🏦 Bank transfer</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="deposit-confirm">Deposit</button>
+  </div>
+
+  <div class="modal hidden" id="withdraw-modal">
+    <div class="modal-head"><h3>Withdrawal</h3><button class="modal-close">✕</button></div>
+    <p class="modal-sub">Withdraw from your live account balance: <b id="withdraw-avail">$0.00</b></p>
+    <div class="field"><label>Amount (USD)</label><input type="number" id="withdraw-amount" min="1" value="50"></div>
+    <div class="field"><label>Method</label>
+      <select id="withdraw-method">
+        <option value="card">💳 Visa / Mastercard</option>
+        <option value="crypto">₿ Crypto (BTC/USDT)</option>
+        <option value="bank">🏦 Bank transfer</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="withdraw-confirm">Request withdrawal</button>
+  </div>
+
+  <div class="modal hidden" id="top-modal">
+    <div class="modal-head"><h3>🏆 Top traders today</h3><button class="modal-close">✕</button></div>
+    <div class="leaderboard" id="leaderboard"></div>
+  </div>
+
+  <div class="modal hidden" id="tx-modal">
+    <div class="modal-head"><h3>Transactions</h3><button class="modal-close">✕</button></div>
+    <div class="tx-list" id="tx-list"></div>
+  </div>
+
+  <div class="modal hidden" id="help-modal">
+    <div class="modal-head"><h3>How to trade</h3><button class="modal-close">✕</button></div>
+    <ol class="help-steps">
+      <li><b>Pick an asset</b> — currencies, crypto, commodities or stocks. Each shows its payout %.</li>
+      <li><b>Set the time</b> — how long until your trade expires (5s to 10min).</li>
+      <li><b>Set the amount</b> — how much to invest in this trade.</li>
+      <li><b>Forecast the price</b> — press <span class="up-text">Up</span> if you think the price will rise, <span class="down-text">Down</span> if it will fall.</li>
+      <li><b>Collect your payout</b> — if your forecast is right when the trade expires, you get your stake back plus up to 90% profit.</li>
+    </ol>
+    <p class="modal-sub">Practice on the demo account first — it's free and refillable.</p>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="js/chart.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
