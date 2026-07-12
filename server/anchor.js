@@ -16,6 +16,7 @@ try { ({ HttpsProxyAgent } = require('https-proxy-agent')); } catch { /* optiona
 
 const KEY = process.env.ALPHAVANTAGE_KEY;
 const BASE = process.env.ALPHAVANTAGE_URL || 'https://www.alphavantage.co';
+const STOOQ = process.env.STOOQ_URL || 'https://stooq.com';
 const REFRESH_MS = 20 * 3600 * 1000;          // re-anchor each asset ~daily
 const SPACING_MS = Number(process.env.ALPHAVANTAGE_SPACING_MS) || 20000; // free tier: max 5 req/min
 const ANCHORS_FILE = path.join(__dirname, '..', 'data', 'anchors.json');
@@ -31,8 +32,9 @@ const SOURCES = [
   { id: 'AUDUSD', type: 'fx', from: 'AUD', to: 'USD' },
   { id: 'USDCAD', type: 'fx', from: 'USD', to: 'CAD' },
   { id: 'EURGBP', type: 'fx', from: 'EUR', to: 'GBP' },
-  { id: 'XAUUSD', type: 'fx', from: 'XAU', to: 'USD' },
-  { id: 'XAGUSD', type: 'fx', from: 'XAG', to: 'USD' },
+  // Alpha Vantage dropped free XAU/XAG rates; Stooq serves them keyless.
+  { id: 'XAUUSD', type: 'stooq', symbol: 'xauusd' },
+  { id: 'XAGUSD', type: 'stooq', symbol: 'xagusd' },
   { id: 'AAPL', type: 'stock', symbol: 'AAPL' },
   { id: 'TSLA', type: 'stock', symbol: 'TSLA' },
   { id: 'AMZN', type: 'stock', symbol: 'AMZN' },
@@ -40,7 +42,7 @@ const SOURCES = [
   { id: 'UKBRENT', type: 'brent' },
 ];
 
-function getJSON(url) {
+function getText(url) {
   const lib = url.startsWith('https:') ? https : require('http');
   return new Promise((resolve, reject) => {
     const req = lib.get(url, { agent: url.startsWith('https:') ? agent : undefined, timeout: 15000 }, (res) => {
@@ -48,12 +50,16 @@ function getJSON(url) {
       res.on('data', (c) => (data += c));
       res.on('end', () => {
         if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        resolve(data);
       });
     });
     req.on('timeout', () => req.destroy(new Error('request timeout')));
     req.on('error', reject);
   });
+}
+
+async function getJSON(url) {
+  return JSON.parse(await getText(url));
 }
 
 class AnchorFeed {
@@ -117,20 +123,29 @@ class AnchorFeed {
   }
 
   async fetchPrice(src) {
-    let url;
-    if (src.type === 'fx') {
-      url = `${BASE}/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${src.from}&to_currency=${src.to}&apikey=${KEY}`;
-    } else if (src.type === 'stock') {
-      url = `${BASE}/query?function=GLOBAL_QUOTE&symbol=${src.symbol}&apikey=${KEY}`;
-    } else {
-      url = `${BASE}/query?function=BRENT&interval=daily&apikey=${KEY}`;
-    }
-    const data = await getJSON(url);
-    if (data.Note || data.Information) throw new Error(data.Note || data.Information);
     let price;
-    if (src.type === 'fx') price = parseFloat(data['Realtime Currency Exchange Rate']?.['5. Exchange Rate']);
-    else if (src.type === 'stock') price = parseFloat(data['Global Quote']?.['05. price']);
-    else price = parseFloat((data.data || []).find((d) => d.value !== '.')?.value);
+    if (src.type === 'stooq') {
+      // CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+      const csv = await getText(`${STOOQ}/q/l/?s=${src.symbol}&f=sd2t2ohlcv&h&e=csv`);
+      const cols = (csv.trim().split('\n')[1] || '').split(',');
+      price = parseFloat(cols[6]);
+    } else {
+      let url;
+      if (src.type === 'fx') {
+        url = `${BASE}/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${src.from}&to_currency=${src.to}&apikey=${KEY}`;
+      } else if (src.type === 'stock') {
+        url = `${BASE}/query?function=GLOBAL_QUOTE&symbol=${src.symbol}&apikey=${KEY}`;
+      } else {
+        url = `${BASE}/query?function=BRENT&interval=daily&apikey=${KEY}`;
+      }
+      const data = await getJSON(url);
+      if (data.Note || data.Information || data['Error Message']) {
+        throw new Error(data.Note || data.Information || data['Error Message']);
+      }
+      if (src.type === 'fx') price = parseFloat(data['Realtime Currency Exchange Rate']?.['5. Exchange Rate']);
+      else if (src.type === 'stock') price = parseFloat(data['Global Quote']?.['05. price']);
+      else price = parseFloat((data.data || []).find((d) => d.value !== '.')?.value);
+    }
     if (!Number.isFinite(price) || price <= 0) throw new Error('no price in response');
     return price;
   }

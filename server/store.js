@@ -80,7 +80,11 @@ class Store {
       }
     } catch (e) {
       this.db = null;
-      console.error(`[db] MongoDB unavailable (${e.message}) — falling back to JSON file storage`);
+      if (e.code === 'MODULE_NOT_FOUND') {
+        console.error('[db] mongodb package not installed — run "npm install" and restart. Falling back to JSON file storage');
+      } else {
+        console.error(`[db] MongoDB unavailable (${e.message}) — falling back to JSON file storage`);
+      }
       try { await this.client?.close(); } catch { /* ignore */ }
     }
   }
