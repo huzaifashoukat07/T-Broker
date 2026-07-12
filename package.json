@@ -13,6 +13,9 @@
   "dependencies": {
     "express": "^4.19.2",
     "https-proxy-agent": "^9.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "lightweight-charts": "^4.2.3",
+    "nodemailer": "^9.0.3",
     "ws": "^8.18.0"
   },
   "license": "MIT"

@@ -1,10 +1,15 @@
 // User store: registration, login, balances, trades.
 // Persists to data/db.json (debounced writes). Passwords hashed with scrypt,
-// sessions are HMAC-signed tokens — no external auth dependencies.
+// sessions are JWTs; signups/logins are confirmed with an emailed OTP code.
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_MS = 45 * 1000;
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -16,6 +21,7 @@ class Store {
     this.users = new Map();
     this.secret = crypto.randomBytes(32).toString('hex');
     this.saveTimer = null;
+    this.pendingAuth = new Map(); // email -> { type, code, expires, attempts, lastSentAt, ... }
     this.load();
   }
 
@@ -53,32 +59,95 @@ class Store {
     return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
   }
 
-  register(email, password, name) {
+  // --- OTP-verified signup / login ---------------------------------------
+  // Step 1: beginRegister/beginLogin validate credentials and stash a pending
+  //         request keyed by email, returning the OTP code to send.
+  // Step 2: verifyOtp checks the code and completes the action.
+
+  beginRegister(email, password, name) {
     email = String(email || '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError('Enter a valid email address');
     if (!password || String(password).length < 6) throw new ApiError('Password must be at least 6 characters');
     if (this.findByEmail(email)) throw new ApiError('An account with this email already exists');
-    const user = {
-      id: crypto.randomUUID(),
-      email,
+    return this.createPending(email, {
+      type: 'register',
       name: String(name || '').trim() || email.split('@')[0],
       pass: this.hashPassword(String(password)),
-      demoBalance: DEMO_START_BALANCE,
-      liveBalance: 0,
-      trades: [],
-      transactions: [],
-      createdAt: Date.now(),
-    };
-    this.users.set(user.id, user);
-    this.save();
-    return user;
+    });
   }
 
-  login(email, password) {
-    const user = this.findByEmail(String(email || '').trim().toLowerCase());
+  beginLogin(email, password) {
+    email = String(email || '').trim().toLowerCase();
+    const user = this.findByEmail(email);
     if (!user || !this.verifyPassword(String(password || ''), user.pass)) {
       throw new ApiError('Incorrect email or password');
     }
+    return this.createPending(email, { type: 'login', userId: user.id });
+  }
+
+  createPending(email, data) {
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    this.pendingAuth.set(email, {
+      ...data,
+      code,
+      expires: Date.now() + OTP_TTL_MS,
+      attempts: 0,
+      lastSentAt: Date.now(),
+    });
+    return { email, code };
+  }
+
+  resendOtp(email) {
+    email = String(email || '').trim().toLowerCase();
+    const pending = this.pendingAuth.get(email);
+    if (!pending) throw new ApiError('No pending verification for this email — start over');
+    if (Date.now() - pending.lastSentAt < OTP_RESEND_COOLDOWN_MS) {
+      throw new ApiError('Please wait a moment before requesting another code');
+    }
+    pending.code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    pending.expires = Date.now() + OTP_TTL_MS;
+    pending.attempts = 0;
+    pending.lastSentAt = Date.now();
+    return { email, code: pending.code };
+  }
+
+  verifyOtp(email, code) {
+    email = String(email || '').trim().toLowerCase();
+    const pending = this.pendingAuth.get(email);
+    if (!pending) throw new ApiError('No pending verification for this email — start over');
+    if (Date.now() > pending.expires) {
+      this.pendingAuth.delete(email);
+      throw new ApiError('This code has expired — request a new one');
+    }
+    pending.attempts++;
+    if (pending.attempts > OTP_MAX_ATTEMPTS) {
+      this.pendingAuth.delete(email);
+      throw new ApiError('Too many wrong attempts — start over');
+    }
+    const given = String(code || '').trim();
+    const ok = given.length === 6 &&
+      crypto.timingSafeEqual(Buffer.from(given), Buffer.from(pending.code));
+    if (!ok) throw new ApiError('Incorrect code — check your email and try again');
+    this.pendingAuth.delete(email);
+
+    if (pending.type === 'register') {
+      const user = {
+        id: crypto.randomUUID(),
+        email,
+        name: pending.name,
+        pass: pending.pass,
+        demoBalance: DEMO_START_BALANCE,
+        liveBalance: 0,
+        trades: [],
+        transactions: [],
+        createdAt: Date.now(),
+      };
+      this.users.set(user.id, user);
+      this.save();
+      return user;
+    }
+    const user = this.users.get(pending.userId);
+    if (!user) throw new ApiError('Account no longer exists');
     return user;
   }
 
@@ -91,25 +160,20 @@ class Store {
     return this.users.get(id) || null;
   }
 
-  // --- Tokens -----------------------------------------------------------
+  // --- JWT session tokens -------------------------------------------------
 
   issueToken(userId) {
-    const exp = Date.now() + 30 * 24 * 3600 * 1000;
-    const body = `${userId}.${exp}`;
-    const sig = crypto.createHmac('sha256', this.secret).update(body).digest('base64url');
-    return `${body}.${sig}`;
+    return jwt.sign({ sub: userId }, this.secret, { expiresIn: '30d', issuer: 'novatrade' });
   }
 
   verifyToken(token) {
     if (!token) return null;
-    const parts = String(token).split('.');
-    if (parts.length !== 3) return null;
-    const [userId, exp, sig] = parts;
-    const expect = crypto.createHmac('sha256', this.secret).update(`${userId}.${exp}`).digest('base64url');
-    const a = Buffer.from(sig), b = Buffer.from(expect);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    if (Number(exp) < Date.now()) return null;
-    return this.users.get(userId) || null;
+    try {
+      const payload = jwt.verify(token, this.secret, { issuer: 'novatrade' });
+      return this.users.get(payload.sub) || null;
+    } catch {
+      return null;
+    }
   }
 
   // --- Money ------------------------------------------------------------

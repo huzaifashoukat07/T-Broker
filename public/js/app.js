@@ -39,42 +39,110 @@ async function api(path, opts = {}) {
 }
 
 // ---------------------------------------------------------------- auth
+// Two-step: email + password, then a 6-digit OTP emailed to the user.
 
 let authMode = 'login';
+let otpStage = false;
+let otpEmail = '';
+let resendTimer = null;
 
 $$('.auth-tab').forEach((btn) =>
   btn.addEventListener('click', () => {
     authMode = btn.dataset.tab;
     $$('.auth-tab').forEach((b) => b.classList.toggle('active', b === btn));
     $('#field-name').classList.toggle('hidden', authMode === 'login');
-    $('#auth-submit').textContent = authMode === 'login' ? 'Log in' : 'Create account';
-    $('#auth-error').classList.add('hidden');
     $('#auth-password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
+    setOtpStage(false);
   })
 );
+
+function setOtpStage(on, email, emailSent) {
+  otpStage = on;
+  $('#step-creds').classList.toggle('hidden', on);
+  $('#step-otp').classList.toggle('hidden', !on);
+  $('#auth-submit').textContent = on ? 'Verify code' : authMode === 'login' ? 'Log in' : 'Create account';
+  $('#auth-error').classList.add('hidden');
+  if (on) {
+    otpEmail = email;
+    $('#otp-email').textContent = email;
+    $('#otp-dev').classList.toggle('hidden', !!emailSent);
+    $('#auth-otp').value = '';
+    $('#auth-otp').focus();
+    startResendCooldown();
+  } else {
+    clearInterval(resendTimer);
+  }
+}
+
+function startResendCooldown() {
+  clearInterval(resendTimer);
+  const btn = $('#otp-resend');
+  let left = 45;
+  btn.disabled = true;
+  btn.textContent = `Resend code (${left}s)`;
+  resendTimer = setInterval(() => {
+    left--;
+    if (left <= 0) {
+      clearInterval(resendTimer);
+      btn.disabled = false;
+      btn.textContent = 'Resend code';
+    } else {
+      btn.textContent = `Resend code (${left}s)`;
+    }
+  }, 1000);
+}
+
+function showAuthError(message) {
+  const el = $('#auth-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
 
 $('#auth-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = $('#auth-submit');
   btn.disabled = true;
   try {
-    const body = {
-      email: $('#auth-email').value,
-      password: $('#auth-password').value,
-      name: $('#auth-name').value,
-    };
-    const data = await api(authMode === 'login' ? '/api/login' : '/api/register', { body });
-    state.token = data.token;
-    state.user = data.user;
-    localStorage.setItem('tb_token', data.token);
-    enterApp();
+    if (!otpStage) {
+      const body = {
+        email: $('#auth-email').value,
+        password: $('#auth-password').value,
+        name: $('#auth-name').value,
+      };
+      const data = await api(authMode === 'login' ? '/api/login' : '/api/register', { body });
+      if (data.otpRequired) setOtpStage(true, data.email, data.emailSent);
+    } else {
+      const data = await api('/api/verify-otp', { body: { email: otpEmail, code: $('#auth-otp').value } });
+      state.token = data.token;
+      state.user = data.user;
+      localStorage.setItem('tb_token', data.token);
+      clearInterval(resendTimer);
+      enterApp();
+    }
   } catch (err) {
-    const el = $('#auth-error');
-    el.textContent = err.message;
-    el.classList.remove('hidden');
+    showAuthError(err.message);
   } finally {
     btn.disabled = false;
   }
+});
+
+$('#otp-back').addEventListener('click', () => setOtpStage(false));
+
+$('#otp-resend').addEventListener('click', async () => {
+  try {
+    const data = await api('/api/resend-otp', { body: { email: otpEmail } });
+    $('#otp-dev').classList.toggle('hidden', !!data.emailSent);
+    startResendCooldown();
+  } catch (err) {
+    showAuthError(err.message);
+  }
+});
+
+// auto-submit when 6 digits are typed
+$('#auth-otp').addEventListener('input', () => {
+  const v = $('#auth-otp').value.replace(/\D/g, '').slice(0, 6);
+  $('#auth-otp').value = v;
+  if (v.length === 6) $('#auth-form').requestSubmit();
 });
 
 function logout() {
@@ -295,7 +363,7 @@ function updateProfitPreview() {
 }
 
 async function placeTrade(direction) {
-  const btns = [$('#btn-up'), $('#btn-down'), $('#m-btn-up'), $('#m-btn-down')];
+  const btns = [$('#btn-up'), $('#btn-down')];
   btns.forEach((b) => (b.disabled = true));
   try {
     const data = await api('/api/trade', {
@@ -322,8 +390,6 @@ async function placeTrade(direction) {
 
 $('#btn-up').addEventListener('click', () => placeTrade('up'));
 $('#btn-down').addEventListener('click', () => placeTrade('down'));
-$('#m-btn-up').addEventListener('click', () => placeTrade('up'));
-$('#m-btn-down').addEventListener('click', () => placeTrade('down'));
 
 // ---------------------------------------------------------------- trades list
 
@@ -347,6 +413,7 @@ function renderTrades() {
   const inAccount = state.trades.filter((t) => t.account === state.account);
   const open = inAccount.filter((t) => t.status === 'open');
   $('#open-count').textContent = open.length;
+  $('#open-count-m').textContent = open.length;
   const list = state.tradesTab === 'open' ? open : inAccount.filter((t) => t.status !== 'open');
   wrap.innerHTML = '';
   if (!list.length) {
@@ -515,7 +582,7 @@ $('#withdraw-confirm').addEventListener('click', async () => {
   }
 });
 
-$('#rail-top').addEventListener('click', async () => {
+async function showLeaderboard() {
   openModal('#top-modal');
   const { leaderboard } = await api('/api/leaderboard');
   $('#leaderboard').innerHTML = leaderboard
@@ -527,7 +594,10 @@ $('#rail-top').addEventListener('click', async () => {
         <span class="lb-profit">+${fmtMoney(r.profit)}</span>
       </div>`)
     .join('');
-});
+}
+$('#rail-top').addEventListener('click', showLeaderboard);
+$('#menu-top-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); showLeaderboard(); });
+$('#menu-help-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); openModal('#help-modal'); });
 
 async function showTransactions() {
   openModal('#tx-modal');
@@ -543,6 +613,11 @@ async function showTransactions() {
 }
 $('#tx-btn').addEventListener('click', showTransactions);
 $('#rail-tx').addEventListener('click', showTransactions);
+
+// mobile: slide the trades list up over the chart
+$('#mobile-trades-btn').addEventListener('click', () => {
+  document.body.classList.toggle('trades-open');
+});
 
 // ---------------------------------------------------------------- toasts
 

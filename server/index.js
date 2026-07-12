@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 const { Market, TIMEFRAMES } = require('./market');
 const { LiveFeed } = require('./livefeed');
 const { Store, ApiError } = require('./store');
+const { sendOtp } = require('./mailer');
 
 const PORT = process.env.PORT || 3000;
 const MIN_TRADE = 1;
@@ -33,9 +34,9 @@ function auth(req, res, next) {
 }
 
 function handle(fn) {
-  return (req, res) => {
+  return async (req, res) => {
     try {
-      fn(req, res);
+      await fn(req, res);
     } catch (e) {
       if (e instanceof ApiError) return res.status(e.status).json({ error: e.message });
       console.error(e);
@@ -44,18 +45,40 @@ function handle(fn) {
   };
 }
 
-// --- auth ------------------------------------------------------------------
+// --- auth (two-step: password -> emailed OTP -> JWT) -------------------------
 
-app.post('/api/register', handle((req, res) => {
+async function dispatchOtp(res, pending, purpose) {
+  let emailSent = false;
+  try {
+    emailSent = await sendOtp(pending.email, pending.code, purpose);
+  } catch (e) {
+    console.error(`[mail] send failed: ${e.message}`);
+    console.log(`[mail] ${purpose} code for ${pending.email}: ${pending.code}`);
+  }
+  res.json({ otpRequired: true, email: pending.email, emailSent });
+}
+
+app.post('/api/register', handle(async (req, res) => {
   const { email, password, name } = req.body || {};
-  const user = store.register(email, password, name);
+  const pending = store.beginRegister(email, password, name);
+  await dispatchOtp(res, pending, 'sign up');
+}));
+
+app.post('/api/login', handle(async (req, res) => {
+  const { email, password } = req.body || {};
+  const pending = store.beginLogin(email, password);
+  await dispatchOtp(res, pending, 'login');
+}));
+
+app.post('/api/verify-otp', handle((req, res) => {
+  const { email, code } = req.body || {};
+  const user = store.verifyOtp(email, code);
   res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
 }));
 
-app.post('/api/login', handle((req, res) => {
-  const { email, password } = req.body || {};
-  const user = store.login(email, password);
-  res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
+app.post('/api/resend-otp', handle(async (req, res) => {
+  const pending = store.resendOtp(req.body?.email);
+  await dispatchOtp(res, pending, 'verification');
 }));
 
 app.get('/api/me', auth, handle((req, res) => {

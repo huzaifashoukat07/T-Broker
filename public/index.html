@@ -20,17 +20,31 @@
       <button class="auth-tab" data-tab="register">Sign up</button>
     </div>
     <form id="auth-form" autocomplete="on">
-      <div class="field hidden" id="field-name">
-        <label>Name</label>
-        <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+      <div id="step-creds">
+        <div class="field hidden" id="field-name">
+          <label>Name</label>
+          <input type="text" id="auth-name" placeholder="Your name" autocomplete="name">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••" required minlength="6" autocomplete="current-password">
+        </div>
       </div>
-      <div class="field">
-        <label>Email</label>
-        <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="auth-password" placeholder="••••••••" required minlength="6" autocomplete="current-password">
+      <div id="step-otp" class="hidden">
+        <p class="otp-info">Enter the 6-digit code we sent to<br><b id="otp-email">you@example.com</b></p>
+        <p class="otp-dev hidden" id="otp-dev">⚠ Email isn't configured on this server — the code was printed in the <b>server console</b>.</p>
+        <div class="field">
+          <label>Verification code</label>
+          <input type="text" id="auth-otp" class="otp-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="······" autocomplete="one-time-code">
+        </div>
+        <div class="otp-actions">
+          <button type="button" id="otp-back">← Back</button>
+          <button type="button" id="otp-resend">Resend code</button>
+        </div>
       </div>
       <div class="auth-error hidden" id="auth-error"></div>
       <button type="submit" class="btn-primary" id="auth-submit">Log in</button>
@@ -83,6 +97,8 @@
         <div class="um-email" id="um-email">you@example.com</div>
         <hr>
         <button id="tx-btn">Transactions</button>
+        <button id="menu-top-btn">Leaderboard</button>
+        <button id="menu-help-btn">How to trade</button>
         <button id="logout-btn" class="danger">Log out</button>
       </div>
     </div>
@@ -115,9 +131,10 @@
         <div class="tf-group" id="tf-group"></div>
         <div class="chart-asset-info">
           <span id="chart-price" class="chart-price">—</span>
+          <button class="mobile-trades-btn" id="mobile-trades-btn">Trades <span class="badge" id="open-count-m">0</span></button>
         </div>
       </div>
-      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="chart-wrap"><div id="chart"></div></div>
     </main>
 
     <!-- Trade panel -->
@@ -170,11 +187,6 @@
     </aside>
   </div>
 
-  <!-- Mobile trade bar -->
-  <div class="mobile-bar">
-    <button class="btn-down" id="m-btn-down">▼ Down</button>
-    <button class="btn-up" id="m-btn-up">▲ Up</button>
-  </div>
 </div>
 
 <!-- ============ MODALS ============ -->
@@ -243,7 +255,8 @@
 
 <div class="toasts" id="toasts"></div>
 
-<script src="js/chart.js"></script>
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script src="js/tvchart.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

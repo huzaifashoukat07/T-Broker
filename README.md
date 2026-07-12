@@ -9,7 +9,7 @@ A **Quotex-style online trading platform** — binary options trading with live 
 ## Features
 
 **Trading**
-- 📊 Real-time candlestick chart (custom canvas engine — pan, zoom, live ticks at 2 ticks/sec)
+- 📊 Real-time **TradingView** candlestick chart (official `lightweight-charts` library, bundled locally — pan, zoom, crosshair, live ticks at 2 ticks/sec)
 - ⏱ 5 chart timeframes: 5s, 15s, 30s, 1m, 5m
 - 🔼🔽 Up/Down binary trades with expiries from 5 seconds to 10 minutes
 - 💰 Per-asset payouts from 75% up to **90%**
@@ -23,7 +23,8 @@ A **Quotex-style online trading platform** — binary options trading with live 
 - Stocks: Apple, Tesla, Amazon, Microsoft
 
 **Accounts & wallet**
-- 🔐 Email/password auth (scrypt-hashed passwords, HMAC-signed session tokens)
+- 🔐 Two-step auth: email/password plus a **6-digit OTP emailed to the user** on every signup and login; sessions are **JWTs** (30-day expiry)
+- 📱 Fully responsive — desktop, tablet and phone layouts (trade controls dock to the bottom on mobile, trades list becomes a slide-up sheet)
 - 🎓 Free **$10,000 demo account** — refillable in one click
 - 💳 Live account with simulated deposits & withdrawals (card / crypto / bank)
 - 🧾 Transaction history
@@ -46,6 +47,18 @@ npm start
 
 Open **http://localhost:3000**, sign up (any email works — it's all local), and start trading on the demo account.
 
+### Email (OTP) setup
+
+Signup/login verification codes are emailed via SMTP. Configure it with environment variables:
+
+```bash
+SMTP_HOST=smtp.gmail.com SMTP_PORT=465 \
+SMTP_USER=you@gmail.com SMTP_PASS=your-app-password \
+SMTP_FROM="NovaTrade <you@gmail.com>" npm start
+```
+
+Without SMTP configured the server runs in **dev mode**: codes are printed to the server console (the login screen tells the user where to look). Codes expire after 5 minutes, allow 5 attempts, and can be resent after 45 seconds.
+
 ### Live market data
 
 Crypto assets (BTC, ETH, SOL) automatically connect to Binance's public market-data endpoints — no account or API key required. If your network can't reach `data-api.binance.vision`, you can point the feed elsewhere:
@@ -60,9 +73,9 @@ If Binance can't be reached at all, those assets fall back to simulated prices a
 
 | Layer      | Tech |
 |------------|------|
-| Backend    | Node.js, Express, `ws` (WebSockets) |
-| Frontend   | Vanilla JS, custom canvas chart — zero frontend dependencies |
-| Auth       | scrypt password hashing + HMAC-signed tokens (Node `crypto`) |
+| Backend    | Node.js, Express, `ws` (WebSockets), `nodemailer` (OTP emails) |
+| Frontend   | Vanilla JS + TradingView `lightweight-charts` (bundled in `public/vendor/`) |
+| Auth       | scrypt password hashing + emailed OTP + JWT sessions (`jsonwebtoken`) |
 | Storage    | JSON file (`data/db.json`) |
 
 ## Project structure
@@ -71,20 +84,25 @@ If Binance can't be reached at all, those assets fall back to simulated prices a
 server/
   index.js    # REST API, WebSocket feed, trade settlement
   market.js   # price engine: random-walk feeds + candle aggregation
-  store.js    # users, auth, balances, persistence
+  store.js    # users, auth (OTP + JWT), balances, persistence
+  mailer.js   # OTP emails via SMTP (console fallback in dev)
+  livefeed.js # real crypto prices from Binance with fallback
 public/
-  index.html  # auth screen, trading UI, modals
+  index.html  # auth screen (with OTP step), trading UI, modals
   css/style.css
-  js/chart.js # canvas candlestick chart engine
+  js/tvchart.js # TradingView lightweight-charts wrapper
   js/app.js   # application logic
+  vendor/     # bundled lightweight-charts library
 ```
 
 ## API overview
 
 | Method | Endpoint            | Description |
 |--------|---------------------|-------------|
-| POST   | `/api/register`     | Create account (gets $10k demo balance) |
-| POST   | `/api/login`        | Log in, returns bearer token |
+| POST   | `/api/register`     | Start signup — sends an OTP to the email |
+| POST   | `/api/login`        | Start login — checks password, sends an OTP |
+| POST   | `/api/verify-otp`   | Confirm the 6-digit code → returns JWT + user |
+| POST   | `/api/resend-otp`   | Send a fresh code (45s cooldown) |
 | GET    | `/api/assets`       | Assets, payouts, timeframes, durations |
 | GET    | `/api/candles`      | OHLC history (`asset`, `tf`, `limit`) |
 | POST   | `/api/trade`        | Place a trade (`asset`, `direction`, `amount`, `duration`, `account`) |
