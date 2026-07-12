@@ -259,17 +259,37 @@ async function enterApp() {
 // ---------------------------------------------------------------- websocket
 
 function connectWS() {
-  if (state.ws) { try { state.ws.close(); } catch {} }
+  if (state.ws) { try { state.ws.onclose = null; state.ws.close(); } catch {} }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(state.token)}`);
   state.ws = ws;
+  ws.onopen = () => {
+    state.lastTickAt = Date.now();
+    // catch up on any candles missed while disconnected (sleep, network blip)
+    if (state.wsWasConnected && state.asset) loadCandles();
+    state.wsWasConnected = true;
+  };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'ticks') onTicks(msg);
+    if (msg.type === 'ticks') { state.lastTickAt = Date.now(); onTicks(msg); }
     else if (msg.type === 'trade_settled') onTradeSettled(msg);
+    else if (msg.type === 'candles_changed' && state.asset && msg.asset === state.asset.id) loadCandles();
   };
   ws.onclose = () => setTimeout(() => { if (!document.hidden) connectWS(); }, 1500);
 }
+
+// Frozen-chart protection: reconnect as soon as the tab becomes visible
+// again, and force a reconnect if the tick stream goes quiet.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !state.user) return;
+  if (!state.ws || state.ws.readyState > WebSocket.OPEN) connectWS();
+});
+setInterval(() => {
+  if (document.hidden || !state.user || !state.ws) return;
+  if (state.ws.readyState === WebSocket.OPEN && Date.now() - (state.lastTickAt || 0) > 10000) {
+    connectWS(); // stream stalled — reconnect refreshes candles on open
+  }
+}, 5000);
 
 function onTicks(msg) {
   for (const t of msg.ticks) {

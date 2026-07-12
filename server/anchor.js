@@ -57,8 +57,9 @@ function getJSON(url) {
 }
 
 class AnchorFeed {
-  constructor(market) {
+  constructor(market, onAnchor) {
     this.market = market;
+    this.onAnchor = onAnchor; // called with assetId after a live re-anchor
     this.anchors = {}; // assetId -> { price, at }
     this.stopped = false;
     try { this.anchors = JSON.parse(fs.readFileSync(ANCHORS_FILE, 'utf8')); } catch { /* first run */ }
@@ -99,6 +100,7 @@ class AnchorFeed {
           this.anchors[src.id] = { price, at: Date.now() };
           this.save();
           this.market.anchorPrice(src.id, price);
+          this.onAnchor?.(src.id);
           console.log(`[anchor] ${src.id}: anchored to real price ${price}`);
         } catch (e) {
           if (/rate limit|premium|Note|Information/i.test(e.message)) {

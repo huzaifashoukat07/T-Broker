@@ -31,7 +31,11 @@ const market = new Market();
 const store = new Store();
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// no-cache: browsers revalidate every file (cheap 304s), so users always get
+// the current frontend after the server is updated
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 // SPA fallback: client-side routes (/login, /trade, /wallet, ...) all serve
 // the app shell; the frontend router takes it from there. API/WS and real
@@ -246,6 +250,11 @@ function notifyUser(userId, msg) {
   for (const [ws, meta] of sockets) if (meta.userId === userId) wsSend(ws, msg);
 }
 
+function broadcastAll(msg) {
+  const raw = JSON.stringify(msg);
+  for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(raw);
+}
+
 // Broadcast ticks to everyone; settle expired trades on each tick.
 market.onTick((payload) => {
   const msg = JSON.stringify({ type: 'ticks', ...payload });
@@ -295,7 +304,8 @@ const liveFeed = new LiveFeed(market);
 liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
 
 // Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
-const anchorFeed = new AnchorFeed(market);
+// Connected charts are told to reload when an asset's history is rescaled.
+const anchorFeed = new AnchorFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }));
 anchorFeed.start().catch((e) => console.log(`[anchor] disabled: ${e.message}`));
 
 server.listen(PORT, () => {
