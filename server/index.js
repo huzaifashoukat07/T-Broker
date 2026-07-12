@@ -285,29 +285,34 @@ function settleExpired() {
       trade.status = 'lost';
       trade.profit = -trade.amount;
     }
-    store.save();
+    store.save(user);
     notifyUser(userId, { type: 'trade_settled', trade, balances: store.balances(user) });
   }
 }
 
-// Restore any trades that were still open when the server last stopped.
-for (const user of store.users.values()) {
-  for (const trade of user.trades) {
-    if (trade.status === 'open') openTrades.set(trade.id, { trade, userId: user.id });
+(async () => {
+  // Connect storage first (MongoDB when configured, JSON file otherwise).
+  await store.init();
+
+  // Restore any trades that were still open when the server last stopped.
+  for (const user of store.users.values()) {
+    for (const trade of user.trades) {
+      if (trade.status === 'open') openTrades.set(trade.id, { trade, userId: user.id });
+    }
   }
-}
 
-market.start();
+  market.start();
 
-// Real crypto prices from Binance, with automatic fallback to simulation.
-const liveFeed = new LiveFeed(market);
-liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
+  // Real crypto prices from Binance, with automatic fallback to simulation.
+  const liveFeed = new LiveFeed(market);
+  liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
 
-// Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
-// Connected charts are told to reload when an asset's history is rescaled.
-const anchorFeed = new AnchorFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }));
-anchorFeed.start().catch((e) => console.log(`[anchor] disabled: ${e.message}`));
+  // Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
+  // Connected charts are told to reload when an asset's history is rescaled.
+  const anchorFeed = new AnchorFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }));
+  anchorFeed.start().catch((e) => console.log(`[anchor] disabled: ${e.message}`));
 
-server.listen(PORT, () => {
-  console.log(`NovaTrade running on http://localhost:${PORT}`);
-});
+  server.listen(PORT, () => {
+    console.log(`NovaTrade running on http://localhost:${PORT}`);
+  });
+})();

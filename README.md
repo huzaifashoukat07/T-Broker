@@ -52,6 +52,17 @@ Open **http://localhost:3000**, sign up (any email works — it's all local), an
 
 Copy `.env.example` to `.env` in the project root and fill in what you need (API keys, SMTP). The file is loaded automatically at startup and is gitignored — real environment variables still take precedence.
 
+### MongoDB
+
+Set `MONGODB_URI` in `.env` to store users, balances and trade history in MongoDB (local server or a free [Atlas](https://www.mongodb.com/cloud/atlas/register) cluster):
+
+```bash
+MONGODB_URI=mongodb://localhost:27017
+# or Atlas: MONGODB_URI=mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net
+```
+
+On first connect, any users already in `data/db.json` are migrated automatically, and the JWT signing secret moves into the DB so sessions survive restarts. Without `MONGODB_URI` (or if the connection fails at startup) the app falls back to JSON-file storage — nothing breaks.
+
 ### Email (OTP) setup
 
 Signup/login verification codes are emailed via SMTP. Configure it with environment variables:
@@ -92,7 +103,7 @@ The free tier allows only ~25 requests/day — far too few to stream — so each
 | Backend    | Node.js, Express, `ws` (WebSockets), `nodemailer` (OTP emails) |
 | Frontend   | Vanilla JS + TradingView `lightweight-charts` (bundled in `public/vendor/`) |
 | Auth       | scrypt password hashing + emailed OTP + JWT sessions (`jsonwebtoken`) |
-| Storage    | JSON file (`data/db.json`) |
+| Storage    | MongoDB (official driver) with automatic JSON-file fallback |
 
 ## Project structure
 

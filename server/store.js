@@ -1,6 +1,8 @@
 // User store: registration, login, balances, trades.
-// Persists to data/db.json (debounced writes). Passwords hashed with scrypt,
-// sessions are JWTs; signups/logins are confirmed with an emailed OTP code.
+// Users live in memory as the working set; persistence is write-through to
+// MongoDB when MONGODB_URI is configured, otherwise to data/db.json.
+// Passwords hashed with scrypt, sessions are JWTs; signups/logins are
+// confirmed with an emailed OTP code.
 
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +24,8 @@ class Store {
     this.secret = crypto.randomBytes(32).toString('hex');
     this.saveTimer = null;
     this.pendingAuth = new Map(); // email -> { type, code, expires, attempts, lastSentAt, ... }
+    this.db = null; // MongoDB database handle when connected
+    this.dirty = new Set(); // user ids awaiting persistence
     this.load();
   }
 
@@ -35,17 +39,82 @@ class Store {
     }
   }
 
-  save() {
-    clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      try {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(DB_FILE, JSON.stringify({ secret: this.secret, users: [...this.users.values()] }));
-      } catch (e) {
-        console.error('db save failed:', e.message);
+  // Connect to MongoDB if configured. Existing JSON-file users are migrated
+  // on first connect; on any failure the store falls back to file storage.
+  async init() {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      console.log('[db] MONGODB_URI not set — using JSON file storage (data/db.json)');
+      return;
+    }
+    try {
+      const { MongoClient } = require('mongodb');
+      this.client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000 });
+      await this.client.connect();
+      this.db = this.client.db(process.env.MONGODB_DB || 'novatrade');
+      const users = this.db.collection('users');
+      await users.createIndex({ id: 1 }, { unique: true });
+      await users.createIndex({ email: 1 }, { unique: true });
+
+      // JWT signing secret lives in the DB so sessions survive restarts
+      const meta = this.db.collection('meta');
+      const doc = await meta.findOne({ _id: 'auth' });
+      if (doc?.secret) this.secret = doc.secret;
+      else await meta.updateOne({ _id: 'auth' }, { $set: { secret: this.secret } }, { upsert: true });
+
+      const fromDb = await users.find({}).toArray();
+      if (fromDb.length) {
+        this.users.clear();
+        for (const u of fromDb) {
+          delete u._id;
+          this.users.set(u.id, u);
+        }
+        console.log(`[db] MongoDB connected — loaded ${fromDb.length} user(s)`);
+      } else if (this.users.size) {
+        for (const u of this.users.values()) {
+          await users.updateOne({ id: u.id }, { $set: u }, { upsert: true });
+        }
+        console.log(`[db] MongoDB connected — migrated ${this.users.size} user(s) from data/db.json`);
+      } else {
+        console.log('[db] MongoDB connected');
       }
-    }, 250);
+    } catch (e) {
+      this.db = null;
+      console.error(`[db] MongoDB unavailable (${e.message}) — falling back to JSON file storage`);
+      try { await this.client?.close(); } catch { /* ignore */ }
+    }
+  }
+
+  // Persist (debounced). Pass the affected user where known so MongoDB only
+  // writes changed documents; without an argument everything is flushed.
+  save(user) {
+    if (this.db) {
+      if (user) this.dirty.add(user.id);
+      else for (const id of this.users.keys()) this.dirty.add(id);
+    }
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.flush(), 250);
     this.saveTimer.unref?.();
+  }
+
+  flush() {
+    if (this.db) {
+      const users = this.db.collection('users');
+      for (const id of this.dirty) {
+        const u = this.users.get(id);
+        if (!u) continue;
+        users.updateOne({ id }, { $set: u }, { upsert: true })
+          .catch((e) => console.error('[db] save failed:', e.message));
+      }
+      this.dirty.clear();
+      return;
+    }
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(DB_FILE, JSON.stringify({ secret: this.secret, users: [...this.users.values()] }));
+    } catch (e) {
+      console.error('[db] save failed:', e.message);
+    }
   }
 
   hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -143,7 +212,7 @@ class Store {
         createdAt: Date.now(),
       };
       this.users.set(user.id, user);
-      this.save();
+      this.save(user);
       return user;
     }
     const user = this.users.get(pending.userId);
@@ -185,24 +254,24 @@ class Store {
   adjust(user, account, delta) {
     const key = account === 'live' ? 'liveBalance' : 'demoBalance';
     user[key] = round2(user[key] + delta);
-    this.save();
+    this.save(user);
   }
 
   resetDemo(user) {
     user.demoBalance = DEMO_START_BALANCE;
-    this.save();
+    this.save(user);
   }
 
   addTransaction(user, tx) {
     user.transactions.unshift({ id: crypto.randomUUID(), time: Date.now(), ...tx });
     if (user.transactions.length > 100) user.transactions.length = 100;
-    this.save();
+    this.save(user);
   }
 
   addTrade(user, trade) {
     user.trades.unshift(trade);
     if (user.trades.length > MAX_TRADES_KEPT) user.trades.length = MAX_TRADES_KEPT;
-    this.save();
+    this.save(user);
   }
 
   publicUser(user) {
