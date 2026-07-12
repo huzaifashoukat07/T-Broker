@@ -63,15 +63,33 @@ async function getJSON(url) {
 }
 
 class AnchorFeed {
-  constructor(market, onAnchor) {
+  constructor(market, onAnchor, store) {
     this.market = market;
     this.onAnchor = onAnchor; // called with assetId after a live re-anchor
+    this.store = store; // anchors persist in MongoDB when connected
     this.anchors = {}; // assetId -> { price, at }
     this.stopped = false;
+  }
+
+  // Anchors persist in MongoDB when available (hosting platforms wipe local
+  // disk on every restart, which would re-spend the daily API quota),
+  // otherwise in data/anchors.json.
+  async loadAnchors() {
+    if (this.store?.db) {
+      const doc = await this.store.db.collection('meta').findOne({ _id: 'anchors' }).catch(() => null);
+      if (doc?.anchors) this.anchors = doc.anchors;
+      return;
+    }
     try { this.anchors = JSON.parse(fs.readFileSync(ANCHORS_FILE, 'utf8')); } catch { /* first run */ }
   }
 
   save() {
+    if (this.store?.db) {
+      this.store.db.collection('meta')
+        .updateOne({ _id: 'anchors' }, { $set: { anchors: this.anchors } }, { upsert: true })
+        .catch((e) => console.error('[anchor] save failed:', e.message));
+      return;
+    }
     try {
       fs.mkdirSync(path.dirname(ANCHORS_FILE), { recursive: true });
       fs.writeFileSync(ANCHORS_FILE, JSON.stringify(this.anchors));
@@ -85,6 +103,7 @@ class AnchorFeed {
       console.log('[anchor] ALPHAVANTAGE_KEY not set — forex/stock prices stay simulated (crypto is live via Binance)');
       return;
     }
+    await this.loadAnchors();
     console.log('[anchor] Alpha Vantage anchoring enabled (each asset refreshed ~daily, free-tier friendly)');
     // re-apply persisted anchors immediately so restarts don't spend quota
     for (const [id, a] of Object.entries(this.anchors)) {

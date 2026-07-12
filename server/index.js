@@ -309,7 +309,7 @@ function settleExpired() {
 
   // Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
   // Connected charts are told to reload when an asset's history is rescaled.
-  const anchorFeed = new AnchorFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }));
+  const anchorFeed = new AnchorFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }), store);
   anchorFeed.start().catch((e) => console.log(`[anchor] disabled: ${e.message}`));
 
   server.listen(PORT, () => {
