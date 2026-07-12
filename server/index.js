@@ -8,6 +8,7 @@ const { WebSocketServer } = require('ws');
 
 const { Market, TIMEFRAMES } = require('./market');
 const { LiveFeed } = require('./livefeed');
+const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
 const { sendOtp } = require('./mailer');
 
@@ -282,6 +283,10 @@ market.start();
 // Real crypto prices from Binance, with automatic fallback to simulation.
 const liveFeed = new LiveFeed(market);
 liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
+
+// Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
+const anchorFeed = new AnchorFeed(market);
+anchorFeed.start().catch((e) => console.log(`[anchor] disabled: ${e.message}`));
 
 server.listen(PORT, () => {
   console.log(`NovaTrade running on http://localhost:${PORT}`);

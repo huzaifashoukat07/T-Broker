@@ -138,6 +138,24 @@ class Market {
     this.applyTick(a, Math.floor(timeMs / 1000));
   }
 
+  // Re-anchor a simulated asset to a real market price (e.g. a daily quote
+  // from Alpha Vantage): rescale the entire candle history by the ratio so
+  // the chart keeps its shape but sits at the true price level.
+  anchorPrice(id, price) {
+    const a = this.assets.get(id);
+    if (!a || a.external || !Number.isFinite(price) || price <= 0) return;
+    const ratio = price / a.price;
+    if (!Number.isFinite(ratio) || ratio <= 0) return;
+    for (const tf of TIMEFRAMES) {
+      for (const c of a.candles[tf]) {
+        c.o *= ratio; c.h *= ratio; c.l *= ratio; c.c *= ratio;
+      }
+    }
+    a.price = price;
+    a.base = price;
+    a.momentum = 0;
+  }
+
   replaceCandles(id, candlesByTf) {
     const a = this.assets.get(id);
     if (!a) return;

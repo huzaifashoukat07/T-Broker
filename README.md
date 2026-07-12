@@ -70,6 +70,17 @@ BINANCE_REST=https://api.binance.com BINANCE_WS=wss://stream.binance.com:9443 np
 
 If Binance can't be reached at all, those assets fall back to simulated prices automatically (and keep retrying in the background).
 
+### Real forex/stock price levels (Alpha Vantage)
+
+With a free [Alpha Vantage](https://www.alphavantage.co/support/#api-key) API key, forex pairs, gold/silver, Brent and stocks are **anchored to their real market prices**:
+
+```bash
+ALPHAVANTAGE_KEY=your_key npm start          # macOS/Linux
+$env:ALPHAVANTAGE_KEY="your_key"; npm start  # Windows PowerShell
+```
+
+The free tier allows only ~25 requests/day — far too few to stream — so each asset is re-anchored roughly once a day: the chart is rescaled to the real price level and the simulator ticks around it. Fetches are spaced 20s apart (free-tier rate limit), anchors persist in `data/anchors.json` so restarts never waste quota, and hitting the daily limit just pauses anchoring until tomorrow.
+
 ## Tech stack
 
 | Layer      | Tech |

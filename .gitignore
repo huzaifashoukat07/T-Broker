@@ -1,4 +1,4 @@
 node_modules/
-data/db.json
+data/
 *.log
 .env
