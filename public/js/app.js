@@ -117,7 +117,7 @@ $('#auth-form').addEventListener('submit', async (e) => {
       state.user = data.user;
       localStorage.setItem('tb_token', data.token);
       clearInterval(resendTimer);
-      enterApp();
+      navigate('/trade', true);
     }
   } catch (err) {
     showAuthError(err.message);
@@ -147,7 +147,77 @@ $('#auth-otp').addEventListener('input', () => {
 
 function logout() {
   localStorage.removeItem('tb_token');
-  location.reload();
+  location.href = '/login';
+}
+
+// ---------------------------------------------------------------- router
+// Every page has a URL and an auth check: guests are sent to /login,
+// signed-in users are kept out of /login, unknown paths fall back to /trade.
+
+const MODAL_ROUTES = {
+  '/wallet': () => showTransactions(),
+  '/top': () => showLeaderboard(),
+  '/help': () => openModal('#help-modal'),
+  '/deposit': () => openModal('#deposit-modal'),
+  '/withdraw': () => openModal('#withdraw-modal'),
+};
+const TITLES = {
+  '/login': 'Log in',
+  '/trade': 'Trade',
+  '/wallet': 'Transactions',
+  '/top': 'Top traders',
+  '/help': 'How to trade',
+  '/deposit': 'Deposit',
+  '/withdraw': 'Withdrawal',
+};
+
+let appEntered = false;
+
+function navigate(path, replace = false) {
+  if (location.pathname !== path) history[replace ? 'replaceState' : 'pushState']({}, '', path);
+  renderRoute();
+}
+
+function renderRoute() {
+  let path = location.pathname;
+  const authed = !!state.user;
+
+  // guards
+  if (!authed && path !== '/login') {
+    history.replaceState({}, '', '/login');
+    path = '/login';
+  } else if (authed && (path === '/login' || path === '/')) {
+    history.replaceState({}, '', '/trade');
+    path = '/trade';
+  } else if (authed && path !== '/trade' && !MODAL_ROUTES[path]) {
+    history.replaceState({}, '', '/trade'); // unknown page -> trade screen
+    path = '/trade';
+  }
+
+  document.title = `${TITLES[path] || 'Trade'} — NovaTrade`;
+
+  if (path === '/login') {
+    $('#app').classList.add('hidden');
+    $('#auth-screen').classList.remove('hidden');
+    return;
+  }
+
+  $('#auth-screen').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  if (!appEntered) {
+    appEntered = true;
+    enterApp();
+  }
+  closeModals();
+  if (MODAL_ROUTES[path]) MODAL_ROUTES[path]();
+}
+
+window.addEventListener('popstate', renderRoute);
+
+// closing a routed modal returns to /trade; plain modals just close
+function dismissModals() {
+  if (state.user && MODAL_ROUTES[location.pathname]) navigate('/trade');
+  else closeModals();
 }
 
 // ---------------------------------------------------------------- boot
@@ -165,19 +235,15 @@ async function boot() {
     try {
       const { user } = await api('/api/me');
       state.user = user;
-      enterApp();
-      return;
     } catch {
       localStorage.removeItem('tb_token');
       state.token = null;
     }
   }
-  $('#auth-screen').classList.remove('hidden');
+  renderRoute();
 }
 
 async function enterApp() {
-  $('#auth-screen').classList.add('hidden');
-  $('#app').classList.remove('hidden');
   $('#avatar').textContent = (state.user.name || 'T')[0].toUpperCase();
   $('#um-name').textContent = state.user.name;
   $('#um-email').textContent = state.user.email;
@@ -533,11 +599,11 @@ function closeModals() {
   $('#modal-overlay').classList.add('hidden');
 }
 $('#modal-overlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeModals();
+  if (e.target === e.currentTarget) dismissModals();
 });
-$$('.modal-close').forEach((b) => b.addEventListener('click', closeModals));
+$$('.modal-close').forEach((b) => b.addEventListener('click', dismissModals));
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModals();
+  if (e.key === 'Escape') dismissModals();
 });
 
 $('#asset-btn').addEventListener('click', () => {
@@ -547,9 +613,9 @@ $('#asset-btn').addEventListener('click', () => {
 });
 $('#asset-search').addEventListener('input', () => renderAssetList($('#asset-search').value));
 
-$('#deposit-btn').addEventListener('click', () => openModal('#deposit-modal'));
-$('#withdraw-btn').addEventListener('click', () => openModal('#withdraw-modal'));
-$('#rail-help').addEventListener('click', () => openModal('#help-modal'));
+$('#deposit-btn').addEventListener('click', () => navigate('/deposit'));
+$('#withdraw-btn').addEventListener('click', () => navigate('/withdraw'));
+$('#rail-help').addEventListener('click', () => navigate('/help'));
 
 $('#deposit-quick').addEventListener('click', (e) => {
   const amt = e.target.dataset.amt;
@@ -562,7 +628,7 @@ $('#deposit-confirm').addEventListener('click', async () => {
       body: { amount: Number($('#deposit-amount').value), method: $('#deposit-method').value },
     });
     renderBalances(data.balances);
-    closeModals();
+    dismissModals();
     toast('win', 'Deposit successful', `${fmtMoney(Number($('#deposit-amount').value))} added to your live account.`);
   } catch (err) {
     toast('error', 'Deposit failed', err.message);
@@ -575,7 +641,7 @@ $('#withdraw-confirm').addEventListener('click', async () => {
       body: { amount: Number($('#withdraw-amount').value), method: $('#withdraw-method').value },
     });
     renderBalances(data.balances);
-    closeModals();
+    dismissModals();
     toast('win', 'Withdrawal requested', 'Funds are on the way (simulated).');
   } catch (err) {
     toast('error', 'Withdrawal failed', err.message);
@@ -595,9 +661,9 @@ async function showLeaderboard() {
       </div>`)
     .join('');
 }
-$('#rail-top').addEventListener('click', showLeaderboard);
-$('#menu-top-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); showLeaderboard(); });
-$('#menu-help-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); openModal('#help-modal'); });
+$('#rail-top').addEventListener('click', () => navigate('/top'));
+$('#menu-top-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/top'); });
+$('#menu-help-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/help'); });
 
 async function showTransactions() {
   openModal('#tx-modal');
@@ -611,8 +677,8 @@ async function showTransactions() {
         </div>`).join('')
     : '<div class="trades-empty">No transactions yet.</div>';
 }
-$('#tx-btn').addEventListener('click', showTransactions);
-$('#rail-tx').addEventListener('click', showTransactions);
+$('#tx-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/wallet'); });
+$('#rail-tx').addEventListener('click', () => navigate('/wallet'));
 
 // mobile: slide the trades list up over the chart
 $('#mobile-trades-btn').addEventListener('click', () => {

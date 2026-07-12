@@ -25,6 +25,7 @@ A **Quotex-style online trading platform** — binary options trading with live 
 **Accounts & wallet**
 - 🔐 Two-step auth: email/password plus a **6-digit OTP emailed to the user** on every signup and login; sessions are **JWTs** (30-day expiry)
 - 📱 Fully responsive — desktop, tablet and phone layouts (trade controls dock to the bottom on mobile, trades list becomes a slide-up sheet)
+- 🧭 URL routing with auth guards — `/login`, `/trade`, `/wallet`, `/top`, `/deposit`, `/withdraw`, `/help`; guests are redirected to `/login`, signed-in users can't revisit it, deep links and browser back/forward work, unknown paths fall back to `/trade`
 - 🎓 Free **$10,000 demo account** — refillable in one click
 - 💳 Live account with simulated deposits & withdrawals (card / crypto / bank)
 - 🧾 Transaction history

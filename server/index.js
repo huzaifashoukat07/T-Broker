@@ -22,6 +22,16 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// SPA fallback: client-side routes (/login, /trade, /wallet, ...) all serve
+// the app shell; the frontend router takes it from there. API/WS and real
+// files (paths with an extension) are excluded.
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/ws') && !path.extname(req.path)) {
+    return res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  }
+  next();
+});
+
 // --- helpers ---------------------------------------------------------------
 
 function auth(req, res, next) {
