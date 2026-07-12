@@ -178,8 +178,19 @@ app.get('/api/trades', auth, handle((req, res) => {
 app.post('/api/deposit', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt < 10 || amt > 50000) throw new ApiError('Deposit must be between $10 and $50,000');
+  const method = req.body?.method || 'card';
+
+  // Binance Pay is a real manual transfer: the money lands in the operator's
+  // Binance wallet, so the account balance is NOT credited automatically —
+  // only claiming to have paid must never mint balance. It is logged as a
+  // pending request for the operator to confirm and credit.
+  if (method === 'binance') {
+    store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'pending' });
+    return res.json({ pending: true, balances: store.balances(req.user) });
+  }
+
   store.adjust(req.user, 'live', amt);
-  store.addTransaction(req.user, { type: 'deposit', amount: amt, method: req.body?.method || 'card' });
+  store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'completed' });
   res.json({ balances: store.balances(req.user) });
 }));
 
@@ -187,9 +198,18 @@ app.post('/api/withdraw', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt <= 0) throw new ApiError('Enter a valid amount');
   if (req.user.liveBalance < amt) throw new ApiError('Insufficient live balance');
+  const method = req.body?.method || 'binance';
+  const binanceId = String(req.body?.binanceId || '').trim();
+  if (method === 'binance' && !/^[0-9]{6,15}$/.test(binanceId)) {
+    throw new ApiError('Enter a valid Binance ID (the numeric ID from your Binance profile)');
+  }
+  // Funds are held immediately; the payout is sent manually within 24–48h.
   store.adjust(req.user, 'live', -amt);
-  store.addTransaction(req.user, { type: 'withdrawal', amount: amt, method: req.body?.method || 'card' });
-  res.json({ balances: store.balances(req.user) });
+  store.addTransaction(req.user, {
+    type: 'withdrawal', amount: amt, method, status: 'pending',
+    ...(binanceId ? { binanceId } : {}),
+  });
+  res.json({ balances: store.balances(req.user), pending: true });
 }));
 
 app.post('/api/reset-demo', auth, handle((req, res) => {

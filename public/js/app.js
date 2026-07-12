@@ -158,8 +158,8 @@ const MODAL_ROUTES = {
   '/wallet': () => showTransactions(),
   '/top': () => showLeaderboard(),
   '/help': () => openModal('#help-modal'),
-  '/deposit': () => openModal('#deposit-modal'),
-  '/withdraw': () => openModal('#withdraw-modal'),
+  '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); },
+  '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); },
 };
 const TITLES = {
   '/login': 'Log in',
@@ -642,27 +642,48 @@ $('#deposit-quick').addEventListener('click', (e) => {
   if (amt) $('#deposit-amount').value = amt;
 });
 
+// Show the Binance Pay QR only when that method is selected; the confirm
+// button reads "I have paid" for Binance, "Deposit" for the others.
+function syncDepositMethod() {
+  const isBinance = $('#deposit-method').value === 'binance';
+  $('#binance-pay-box').style.display = isBinance ? 'block' : 'none';
+  $('#deposit-confirm').textContent = isBinance ? 'I have paid' : 'Deposit';
+}
+$('#deposit-method').addEventListener('change', syncDepositMethod);
+
 $('#deposit-confirm').addEventListener('click', async () => {
+  const method = $('#deposit-method').value;
+  const amount = Number($('#deposit-amount').value);
   try {
-    const data = await api('/api/deposit', {
-      body: { amount: Number($('#deposit-amount').value), method: $('#deposit-method').value },
-    });
+    const data = await api('/api/deposit', { body: { amount, method } });
     renderBalances(data.balances);
     dismissModals();
-    toast('win', 'Deposit successful', `${fmtMoney(Number($('#deposit-amount').value))} added to your live account.`);
+    if (data.pending) {
+      toast('', 'Deposit received', `We're confirming your ${fmtMoney(amount)} Binance Pay transfer. Your balance updates within a few hours.`);
+    } else {
+      toast('win', 'Deposit successful', `${fmtMoney(amount)} added to your live account.`);
+    }
   } catch (err) {
     toast('error', 'Deposit failed', err.message);
   }
 });
 
+// Binance ID field only applies to the Binance Pay method
+function syncWithdrawMethod() {
+  $('#withdraw-binance-field').style.display = $('#withdraw-method').value === 'binance' ? 'block' : 'none';
+}
+$('#withdraw-method').addEventListener('change', syncWithdrawMethod);
+
 $('#withdraw-confirm').addEventListener('click', async () => {
+  const method = $('#withdraw-method').value;
+  const amount = Number($('#withdraw-amount').value);
+  const binanceId = $('#withdraw-binance-id').value.trim();
   try {
-    const data = await api('/api/withdraw', {
-      body: { amount: Number($('#withdraw-amount').value), method: $('#withdraw-method').value },
-    });
+    const data = await api('/api/withdraw', { body: { amount, method, binanceId } });
     renderBalances(data.balances);
     dismissModals();
-    toast('win', 'Withdrawal requested', 'Funds are on the way (simulated).');
+    toast('win', 'Withdrawal in progress',
+      `${fmtMoney(amount)} is on its way${method === 'binance' ? ` to Binance ID ${binanceId}` : ''}. You'll receive it within 24–48 hours.`);
   } catch (err) {
     toast('error', 'Withdrawal failed', err.message);
   }
@@ -691,7 +712,7 @@ async function showTransactions() {
   $('#tx-list').innerHTML = transactions.length
     ? transactions.map((tx) => `
         <div class="tx-row">
-          <span class="tx-type">${tx.type}</span>
+          <span class="tx-type">${tx.type}${tx.status === 'pending' ? ' <span class="tx-badge">pending</span>' : ''}</span>
           <span class="tx-time">${new Date(tx.time).toLocaleString()}</span>
           <span class="tx-amt ${tx.type === 'deposit' ? 'pos' : 'neg'}">${tx.type === 'deposit' ? '+' : '−'}${fmtMoney(tx.amount)}</span>
         </div>`).join('')
