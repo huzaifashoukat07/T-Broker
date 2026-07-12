@@ -48,6 +48,10 @@ npm start
 
 Open **http://localhost:3000**, sign up (any email works — it's all local), and start trading on the demo account.
 
+### Configuration (.env)
+
+Copy `.env.example` to `.env` in the project root and fill in what you need (API keys, SMTP). The file is loaded automatically at startup and is gitignored — real environment variables still take precedence.
+
 ### Email (OTP) setup
 
 Signup/login verification codes are emailed via SMTP. Configure it with environment variables:

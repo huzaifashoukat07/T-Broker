@@ -3,6 +3,16 @@
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
+
+// Load .env (KEY=value lines) before any module reads process.env.
+// Real environment variables take precedence over the file.
+try {
+  const envFile = require('fs').readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+  for (const line of envFile.split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+} catch { /* no .env file — that's fine */ }
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
