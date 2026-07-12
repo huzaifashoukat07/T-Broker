@@ -59,7 +59,11 @@ class CandleChart {
   setData(candles, decimals, tf) {
     this.decimals = decimals;
     this.tf = tf;
-    this.candles = candles.map((c) => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c }));
+    // lightweight-charts throws on duplicate or descending times — dedupe
+    // (last wins) and sort so a glitchy feed can never blank the chart
+    const byTime = new Map();
+    for (const c of candles) byTime.set(c.t, { time: c.t, open: c.o, high: c.h, low: c.l, close: c.c });
+    this.candles = [...byTime.values()].sort((a, b) => a.time - b.time);
     this.series.applyOptions({
       priceFormat: { type: 'price', precision: decimals, minMove: Number((10 ** -decimals).toFixed(decimals)) },
     });
@@ -74,21 +78,21 @@ class CandleChart {
     const bucket = Math.floor(timeMs / 1000 / this.tf) * this.tf;
     const last = this.candles[this.candles.length - 1];
     let candle;
-    if (last.time === bucket) {
+    if (bucket > last.time) {
+      candle = { time: bucket, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price };
+      this.candles.push(candle);
+      if (this.candles.length > 600) this.candles.shift();
+    } else {
+      // same bucket, or a tick stamped slightly in the past (clock skew
+      // between the data feed and this device) — fold it into the newest candle
       candle = {
-        time: bucket,
+        time: last.time,
         open: last.open,
         high: Math.max(last.high, price),
         low: Math.min(last.low, price),
         close: price,
       };
       this.candles[this.candles.length - 1] = candle;
-    } else if (bucket > last.time) {
-      candle = { time: bucket, open: last.close, high: Math.max(last.close, price), low: Math.min(last.close, price), close: price };
-      this.candles.push(candle);
-      if (this.candles.length > 600) this.candles.shift();
-    } else {
-      return; // out-of-order tick
     }
     this.series.update(candle);
   }

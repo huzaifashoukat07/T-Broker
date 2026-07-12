@@ -76,11 +76,15 @@ class Market {
       const bucket = Math.floor(tSec / tf) * tf;
       const arr = a.candles[tf];
       const last = arr[arr.length - 1];
-      if (!last || last.t !== bucket) {
+      if (!last || bucket > last.t) {
         const open = last ? last.c : a.price;
         arr.push({ t: bucket, o: open, h: Math.max(open, a.price), l: Math.min(open, a.price), c: a.price });
         if (arr.length > MAX_CANDLES) arr.shift();
       } else {
+        // bucket <= last.t: update the newest candle. Never push backwards —
+        // live feeds are stamped with Binance's clock while the tick loop uses
+        // the local clock, and any skew would otherwise create out-of-order
+        // candles (which breaks the chart).
         last.c = a.price;
         if (a.price > last.h) last.h = a.price;
         if (a.price < last.l) last.l = a.price;

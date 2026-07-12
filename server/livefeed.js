@@ -35,7 +35,10 @@ function getJSON(url) {
 }
 
 // Aggregate Binance klines ([openTime, o, h, l, c, ...]) into tf-second candles.
+// Klines are sorted first: batched fetches can overlap at the edges, and the
+// chart requires strictly ascending candle times.
 function aggregate(klines, tf) {
+  klines = [...klines].sort((a, b) => a[0] - b[0]);
   const out = [];
   for (const k of klines) {
     const t = Math.floor(k[0] / 1000 / tf) * tf;
