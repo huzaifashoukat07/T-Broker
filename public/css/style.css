@@ -427,6 +427,40 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 }
 .usdt-address-row button:hover { filter: brightness(1.12); }
 
+/* Payment method tiles */
+.pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.pm-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 8px 12px; position: relative; transition: border-color .12s, background .12s;
+}
+.pm-tile:not(.disabled):hover { border-color: var(--accent); }
+.pm-tile.active { border-color: var(--accent); background: rgba(47,124,246,.08); }
+.pm-tile.disabled { opacity: .55; cursor: not-allowed; }
+.pm-icon { height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.pm-usdt {
+  width: 28px; height: 28px; border-radius: 50%; background: #26a17b; color: #fff;
+  font-weight: 800; font-size: 17px; line-height: 1;
+}
+.pm-icon-sm { width: 20px; height: 20px; font-size: 13px; display: inline-flex; vertical-align: -4px; }
+.pm-name { font-weight: 700; font-size: 12.5px; }
+.pm-tag {
+  font-size: 10px; font-weight: 800; letter-spacing: .4px; padding: 2px 7px; border-radius: 5px;
+  background: rgba(140,160,200,.14); color: var(--muted);
+}
+.pm-tag-bep { background: rgba(240,185,11,.15); color: #f0b90b; }
+.pm-tag-trc { background: rgba(194,54,49,.18); color: #ff7a75; }
+.pm-soon {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+  background: rgba(247,179,43,.15); color: var(--gold); padding: 2px 7px; border-radius: 5px;
+}
+
+.modal-back {
+  color: var(--muted); font-size: 17px; padding: 2px 10px 4px; border-radius: 7px; margin-right: 2px;
+}
+.modal-back:hover { background: rgba(255,255,255,.06); color: var(--text); }
+#binance-pay-modal .modal-head h3, #crypto-modal .modal-head h3 { flex: 1; }
+
 /* Admin panel */
 .modal-wide { width: 640px; }
 .admin-list { display: flex; flex-direction: column; gap: 8px; }

@@ -232,7 +232,7 @@ async function boot() {
   state.assets = meta.assets;
   state.durations = meta.durations;
   state.timeframes = meta.timeframes;
-  state.usdtAddress = meta.usdtAddress || '';
+  state.wallets = meta.wallets || {};
   state.durationIdx = Math.max(0, meta.durations.indexOf(60));
   state.asset = state.assets.find((a) => a.id === localStorage.getItem('tb_asset')) || state.assets[0];
   state.tf = Number(localStorage.getItem('tb_tf')) || meta.timeframes[0];
@@ -666,48 +666,91 @@ function prepQr(imgId, spinId) {
   spin.style.display = 'flex';
 }
 
-// Toggle the per-method payment boxes and the confirm button label.
-function syncDepositMethod() {
-  const method = $('#deposit-method').value;
-  $('#binance-pay-box').style.display = method === 'binance' ? 'block' : 'none';
-  $('#usdt-pay-box').style.display = method === 'usdt' ? 'block' : 'none';
-  $('#deposit-confirm').textContent = method === 'bank' ? 'Request deposit' : 'I have paid';
-  if (method === 'binance') prepQr('binance-qr-img', 'binance-qr-spin');
-  if (method === 'usdt') {
-    prepQr('usdt-qr-img', 'usdt-qr-spin');
-    $('#usdt-address').textContent = state.usdtAddress || 'USDT address not configured yet';
-    $('#usdt-copy').style.display = state.usdtAddress ? '' : 'none';
-  }
-}
-$('#deposit-method').addEventListener('change', syncDepositMethod);
+// --- deposit: method tiles -> per-method payment screens --------------------
 
-$('#usdt-copy').addEventListener('click', async () => {
+state.depositMethod = 'binance';
+
+function syncDepositMethod() {
+  $$('.pm-tile').forEach((t) => t.classList.toggle('active', t.dataset.method === state.depositMethod));
+}
+
+$('#pm-grid').addEventListener('click', (e) => {
+  const tile = e.target.closest('.pm-tile');
+  if (!tile || tile.disabled) return;
+  state.depositMethod = tile.dataset.method;
+  syncDepositMethod();
+});
+
+// "Continue" opens the selected method's own screen with the amount carried over
+$('#deposit-continue').addEventListener('click', () => {
+  const amount = Number($('#deposit-amount').value);
+  if (!Number.isFinite(amount) || amount < 10) {
+    return toast('error', 'Enter an amount', 'Minimum deposit is $10.');
+  }
+  if (state.depositMethod === 'binance') {
+    $('#binance-pay-amount').textContent = fmtMoney(amount);
+    openModal('#binance-pay-modal');
+    prepQr('binance-qr-img', 'binance-qr-spin');
+  } else {
+    const net = state.depositMethod === 'usdt-bep20' ? 'bep20' : 'trc20';
+    const w = (state.wallets || {})[net];
+    if (!w || !w.address) return toast('error', 'Unavailable', 'This deposit address is not configured yet.');
+    $('#crypto-title').textContent = w.name;
+    $('#crypto-amount').textContent = fmtMoney(amount);
+    $('#crypto-net-tag').textContent = net.toUpperCase();
+    $('#crypto-net-tag').className = `pm-tag ${net === 'bep20' ? 'pm-tag-bep' : 'pm-tag-trc'}`;
+    $('#crypto-network').textContent = w.network;
+    $('#crypto-network-2').textContent = w.network;
+    $('#crypto-address').textContent = w.address;
+    const img = $('#crypto-qr-img');
+    if (w.qr) { img.src = w.qr; img.style.display = 'inline-block'; $('#crypto-qr-cap').style.display = ''; }
+    else { img.style.display = 'none'; $('#crypto-qr-cap').style.display = 'none'; }
+    openModal('#crypto-modal');
+  }
+});
+
+// back arrows inside method screens return to the deposit form
+$$('.modal-back').forEach((b) => b.addEventListener('click', () => {
+  openModal('#deposit-modal');
+  syncDepositMethod();
+}));
+
+$('#crypto-copy').addEventListener('click', async () => {
+  const net = state.depositMethod === 'usdt-trc20' ? 'trc20' : 'bep20';
   try {
-    await navigator.clipboard.writeText(state.usdtAddress);
-    toast('win', 'Address copied', 'Paste it in your wallet — network must be BEP20.');
+    await navigator.clipboard.writeText((state.wallets?.[net] || {}).address || '');
+    toast('win', 'Address copied', `Paste it in your wallet — network must be ${net.toUpperCase()}.`);
   } catch {
     toast('error', 'Copy failed', 'Select and copy the address manually.');
   }
 });
 
-$('#deposit-confirm').addEventListener('click', async () => {
-  const method = $('#deposit-method').value;
+async function submitDeposit() {
   const amount = Number($('#deposit-amount').value);
   try {
-    const data = await api('/api/deposit', { body: { amount, method } });
+    const data = await api('/api/deposit', { body: { amount, method: state.depositMethod } });
     renderBalances(data.balances);
     dismissModals();
     toast('', 'Deposit request received', `We're confirming your ${fmtMoney(amount)} transfer. Your balance will be credited after verification.`);
   } catch (err) {
     toast('error', 'Deposit failed', err.message);
   }
-});
+}
+$('#binance-paid-btn').addEventListener('click', submitDeposit);
+$('#crypto-paid-btn').addEventListener('click', submitDeposit);
 
-// Per-method detail fields for withdrawals
+// --- withdrawals: per-method detail fields -----------------------------------
+
 function syncWithdrawMethod() {
   const method = $('#withdraw-method').value;
   $('#withdraw-binance-field').style.display = method === 'binance' ? 'block' : 'none';
-  $('#withdraw-usdt-field').style.display = method === 'usdt' ? 'block' : 'none';
+  const isCrypto = method.startsWith('usdt-');
+  $('#withdraw-usdt-field').style.display = isCrypto ? 'block' : 'none';
+  if (isCrypto) {
+    const trc = method === 'usdt-trc20';
+    $('#withdraw-usdt-label').textContent = `Your USDT address (${trc ? 'TRC20' : 'BEP20'})`;
+    $('#withdraw-usdt-address').placeholder = trc ? 'T…' : '0x…';
+  }
 }
 $('#withdraw-method').addEventListener('change', syncWithdrawMethod);
 
@@ -720,7 +763,9 @@ $('#withdraw-confirm').addEventListener('click', async () => {
     const data = await api('/api/withdraw', { body: { amount, method, binanceId, address } });
     renderBalances(data.balances);
     dismissModals();
-    const dest = method === 'binance' ? ` to Binance ID ${binanceId}` : method === 'usdt' ? ' to your USDT (BEP20) address' : '';
+    const dest = method === 'binance' ? ` to Binance ID ${binanceId}`
+      : method === 'usdt-trc20' ? ' to your USDT (TRC20) address'
+      : ' to your USDT (BEP20) address';
     toast('win', 'Withdrawal in progress', `${fmtMoney(amount)} is on its way${dest}. You'll receive it within 24–48 hours.`);
   } catch (err) {
     toast('error', 'Withdrawal failed', err.message);

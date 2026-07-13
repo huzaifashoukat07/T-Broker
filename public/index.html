@@ -206,22 +206,58 @@
       <button data-amt="500">$500</button><button data-amt="1000">$1,000</button>
     </div>
     <div class="field"><label>Amount (USD)</label><input type="number" id="deposit-amount" min="10" max="50000" value="100"></div>
-    <div class="field"><label>Payment method</label>
-      <select id="deposit-method">
-        <option value="binance">🅑 Binance Pay</option>
-        <option value="usdt">₮ USDT (BEP20)</option>
-        <option value="bank">🏦 Bank transfer</option>
-      </select>
+    <div class="field"><label>Payment method</label></div>
+    <div class="pm-grid" id="pm-grid">
+      <button type="button" class="pm-tile active" data-method="binance">
+        <span class="pm-icon pm-binance">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path fill="#F0B90B" d="M12 1.6l3.1 3.1L12 7.8 8.9 4.7 12 1.6zM5.1 8.5l3.1 3.1-3.1 3.1L2 11.6l3.1-3.1zm13.8 0l3.1 3.1-3.1 3.1-3.1-3.1 3.1-3.1zM12 8.5l3.1 3.1-3.1 3.1-3.1-3.1L12 8.5zm0 6.9l3.1 3.1-3.1 3.1-3.1-3.1 3.1-3.1z"/></svg>
+        </span>
+        <span class="pm-name">Binance Pay</span>
+        <span class="pm-tag">Instant scan</span>
+      </button>
+      <button type="button" class="pm-tile" data-method="usdt-bep20">
+        <span class="pm-icon pm-usdt">₮</span>
+        <span class="pm-name">USDT</span>
+        <span class="pm-tag pm-tag-bep">BEP20</span>
+      </button>
+      <button type="button" class="pm-tile" data-method="usdt-trc20">
+        <span class="pm-icon pm-usdt">₮</span>
+        <span class="pm-name">USDT</span>
+        <span class="pm-tag pm-tag-trc">TRC20</span>
+      </button>
+      <button type="button" class="pm-tile disabled" data-method="card" disabled>
+        <span class="pm-icon pm-card">
+          <svg viewBox="0 0 24 24" width="24" height="24"><rect x="2" y="5" width="20" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2 9.5h20" stroke="currentColor" stroke-width="2.4"/><path d="M5.5 15h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <span class="pm-name">Credit / Debit Card</span>
+        <span class="pm-soon">Coming soon</span>
+      </button>
+      <button type="button" class="pm-tile disabled" data-method="bank" disabled>
+        <span class="pm-icon pm-bank">
+          <svg viewBox="0 0 24 24" width="24" height="24"><path d="M3 9.5L12 4l9 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10.5V18M9.5 10.5V18M14.5 10.5V18M19 10.5V18M3.5 20.5h17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <span class="pm-name">Bank Transfer</span>
+        <span class="pm-soon">Coming soon</span>
+      </button>
     </div>
 
-    <!-- Binance Pay: scan-to-pay QR + instructions -->
-    <div id="binance-pay-box" class="binance-pay">
+    <button class="btn-primary" id="deposit-continue">Continue</button>
+  </div>
+
+  <!-- Binance Pay deposit (own screen) -->
+  <div class="modal hidden" id="binance-pay-modal">
+    <div class="modal-head">
+      <button class="modal-back" data-back="deposit">←</button>
+      <h3><svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:-3px"><path fill="#F0B90B" d="M12 1.6l3.1 3.1L12 7.8 8.9 4.7 12 1.6zM5.1 8.5l3.1 3.1-3.1 3.1L2 11.6l3.1-3.1zm13.8 0l3.1 3.1-3.1 3.1-3.1-3.1 3.1-3.1zM12 8.5l3.1 3.1-3.1 3.1-3.1-3.1L12 8.5zm0 6.9l3.1 3.1-3.1 3.1-3.1-3.1 3.1-3.1z"/></svg> Binance Pay</h3>
+      <button class="modal-close">✕</button>
+    </div>
+    <p class="modal-sub">Amount to send: <b id="binance-pay-amount">$100.00</b></p>
+    <div class="binance-pay">
       <div class="bp-steps">
-        <div class="bp-title">How to deposit with Binance Pay</div>
         <ol>
           <li>Open your <b>Binance app</b> → <b>Pay</b> → <b>Scan</b>.</li>
-          <li>Scan the QR code below and send the exact amount above.</li>
-          <li>Tap “I have paid” — your balance is credited after we confirm the transfer (usually within a few hours).</li>
+          <li>Scan the QR code below and send the exact amount.</li>
+          <li>Tap “I have paid” — your balance is credited after we confirm the transfer.</li>
         </ol>
       </div>
       <div class="bp-qr">
@@ -234,33 +270,36 @@
         <span class="bp-qr-cap">Scan with Binance Pay</span>
       </div>
     </div>
+    <button class="btn-primary" id="binance-paid-btn">I have paid</button>
+  </div>
 
-    <!-- USDT BEP20: address + optional QR -->
-    <div id="usdt-pay-box" class="binance-pay" style="display:none">
+  <!-- USDT network deposit (own screen, shared by BEP20 / TRC20) -->
+  <div class="modal hidden" id="crypto-modal">
+    <div class="modal-head">
+      <button class="modal-back" data-back="deposit">←</button>
+      <h3><span class="pm-icon pm-usdt pm-icon-sm">₮</span> <span id="crypto-title">USDT — BEP20</span></h3>
+      <button class="modal-close">✕</button>
+    </div>
+    <p class="modal-sub">Amount to send: <b id="crypto-amount">$100.00</b> <span class="pm-tag" id="crypto-net-tag">BEP20</span></p>
+    <div class="binance-pay">
       <div class="bp-steps">
-        <div class="bp-title">Deposit USDT (BEP20)</div>
         <ol>
           <li>In your wallet or exchange, choose <b>USDT</b> withdrawal.</li>
-          <li>Select network <b>BNB Smart Chain (BEP20)</b>.</li>
-          <li>Send the exact amount above to the address below, then tap “I have paid”.</li>
+          <li>Select network <b id="crypto-network">BNB Smart Chain (BEP20)</b>.</li>
+          <li>Send the exact amount to the address below, then tap “I have paid”.</li>
         </ol>
-        <p class="usdt-warn">⚠ Send only <b>USDT on BEP20</b>. Other coins or other networks will be lost.</p>
+        <p class="usdt-warn">⚠ Send only <b>USDT</b> on <b id="crypto-network-2">this network</b>. Other coins or other networks will be lost.</p>
       </div>
       <div class="usdt-address-row">
-        <code id="usdt-address">—</code>
-        <button type="button" id="usdt-copy">Copy</button>
+        <code id="crypto-address">—</code>
+        <button type="button" id="crypto-copy">Copy</button>
       </div>
-      <div class="bp-qr" id="usdt-qr-wrap">
-        <div class="qr-spin" id="usdt-qr-spin"><span></span>Loading QR…</div>
-        <img src="img/usdt-qr.png" alt="USDT BEP20 deposit QR" id="usdt-qr-img" style="display:none"
-             data-fallbacks="img/usdt-qr.jpg,img/usdt-qr.jpeg"
-             onload="this.style.display='inline-block';document.getElementById('usdt-qr-spin').style.display='none';"
-             onerror="var f=(this.dataset.fallbacks||'').split(',').filter(Boolean);if(f.length){this.dataset.fallbacks=f.slice(1).join(',');this.src=f[0];}else{this.style.display='none';document.getElementById('usdt-qr-spin').style.display='none';}">
-        <span class="bp-qr-cap">Scan to get the address</span>
+      <div class="bp-qr">
+        <img alt="USDT deposit QR" id="crypto-qr-img" style="display:none">
+        <span class="bp-qr-cap" id="crypto-qr-cap">Scan to get the address</span>
       </div>
     </div>
-
-    <button class="btn-primary" id="deposit-confirm">I have paid</button>
+    <button class="btn-primary" id="crypto-paid-btn">I have paid</button>
   </div>
 
   <div class="modal hidden" id="withdraw-modal">
@@ -270,8 +309,8 @@
     <div class="field"><label>Method</label>
       <select id="withdraw-method">
         <option value="binance">🅑 Binance Pay</option>
-        <option value="usdt">₮ USDT (BEP20)</option>
-        <option value="bank">🏦 Bank transfer</option>
+        <option value="usdt-bep20">₮ USDT — BEP20</option>
+        <option value="usdt-trc20">₮ USDT — TRC20</option>
       </select>
     </div>
     <div class="field" id="withdraw-binance-field">
@@ -280,7 +319,7 @@
       <span class="field-hint">Find it in the Binance app under Profile — we send your payout to this ID.</span>
     </div>
     <div class="field" id="withdraw-usdt-field" style="display:none">
-      <label>Your USDT address (BEP20)</label>
+      <label id="withdraw-usdt-label">Your USDT address (BEP20)</label>
       <input type="text" id="withdraw-usdt-address" placeholder="0x…" spellcheck="false">
       <span class="field-hint">Double-check the address — payouts sent to a wrong address cannot be recovered.</span>
     </div>

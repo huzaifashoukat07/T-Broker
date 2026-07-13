@@ -27,6 +27,33 @@ const MIN_TRADE = 1;
 const MAX_TRADE = 5000;
 const DURATIONS = [5, 10, 15, 30, 60, 120, 180, 300, 600]; // seconds
 
+// Crypto deposit wallets. Addresses are env-overridable; QR codes are
+// generated at startup so they always match the configured address.
+const WALLETS = {
+  bep20: {
+    address: process.env.USDT_BEP20_ADDRESS || '0xb20e24e7215180475d861708253cca95c9b79747',
+    name: 'USDT — BEP20',
+    network: 'BNB Smart Chain (BEP20)',
+  },
+  trc20: {
+    address: process.env.USDT_TRC20_ADDRESS || 'TDNoGsUQrVTG8XFi5c4Vwh746AJCd7EoVt',
+    name: 'USDT — TRC20',
+    network: 'Tron (TRC20)',
+  },
+};
+const walletQr = {};
+(async () => {
+  try {
+    const QRCode = require('qrcode');
+    for (const [net, w] of Object.entries(WALLETS)) {
+      walletQr[net] = await QRCode.toDataURL(w.address, { width: 440, margin: 2 });
+    }
+    console.log('[wallet] deposit QR codes generated for', Object.keys(walletQr).join(', '));
+  } catch (e) {
+    console.log(`[wallet] QR generation unavailable (${e.message}) — addresses shown as text only`);
+  }
+})();
+
 const market = new Market();
 const store = new Store();
 const app = express();
@@ -117,7 +144,9 @@ app.get('/api/assets', handle((req, res) => {
     assets: market.listAssets(),
     timeframes: TIMEFRAMES,
     durations: DURATIONS,
-    usdtAddress: process.env.USDT_BEP20_ADDRESS || '',
+    wallets: Object.fromEntries(Object.entries(WALLETS).map(([net, w]) => [
+      net, { ...w, qr: walletQr[net] || null },
+    ])),
   });
 }));
 
@@ -180,7 +209,7 @@ app.get('/api/trades', auth, handle((req, res) => {
 
 // --- wallet ------------------------------------------------------------------
 
-const DEPOSIT_METHODS = ['binance', 'usdt', 'bank'];
+const DEPOSIT_METHODS = ['binance', 'usdt-bep20', 'usdt-trc20']; // card & bank: coming soon
 
 // All deposits are real manual transfers (Binance Pay / USDT BEP20 / bank):
 // the money lands in the operator's wallet, so balances are NEVER credited
@@ -204,8 +233,11 @@ app.post('/api/withdraw', auth, handle((req, res) => {
   if (method === 'binance' && !/^[0-9]{6,15}$/.test(binanceId)) {
     throw new ApiError('Enter a valid Binance ID (the numeric ID from your Binance profile)');
   }
-  if (method === 'usdt' && !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+  if (method === 'usdt-bep20' && !/^0x[0-9a-fA-F]{40}$/.test(address)) {
     throw new ApiError('Enter a valid BEP20 address (starts with 0x, 42 characters)');
+  }
+  if (method === 'usdt-trc20' && !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) {
+    throw new ApiError('Enter a valid TRC20 address (starts with T, 34 characters)');
   }
   // Funds are held immediately; the payout is sent manually within 24–48h.
   store.adjust(req.user, 'live', -amt);
