@@ -1,6 +1,7 @@
 # Images
 
-## binance-qr.png
+## binance-qr.png / binance-qr.jpg
 Your Binance Pay QR code. Save your QR image here as `binance-qr.png`
-(the deposit screen loads it from `/img/binance-qr.png`). If the file is
-missing, the deposit screen shows a "QR not configured yet" placeholder.
+or `binance-qr.jpg` — the deposit screen tries the PNG first, then the
+JPG. If neither file exists, it shows a "QR not configured yet"
+placeholder.

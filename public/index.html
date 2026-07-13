@@ -226,7 +226,7 @@
       </div>
       <div class="bp-qr">
         <img src="img/binance-qr.png" alt="Binance Pay QR code" id="binance-qr-img"
-             onerror="this.style.display='none';document.getElementById('binance-qr-missing').style.display='block'">
+             onerror="if(!this.dataset.triedJpg){this.dataset.triedJpg=1;this.src='img/binance-qr.jpg';}else{this.style.display='none';document.getElementById('binance-qr-missing').style.display='block';}">
         <div id="binance-qr-missing" class="bp-qr-missing" style="display:none">Binance Pay QR not configured yet.</div>
         <span class="bp-qr-cap">Scan with Binance Pay</span>
       </div>
