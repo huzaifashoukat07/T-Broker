@@ -22,6 +22,11 @@ A **Quotex-style online trading platform** — binary options trading with live 
 - Commodities: Gold, Silver, Brent Oil
 - Stocks: Apple, Tesla, Amazon, Microsoft
 
+**Admin & payments**
+- 🛠 Admin panel (`/admin`) — users listed in `ADMIN_EMAILS` can review pending deposit/withdrawal requests and credit or reject them with one click; the user is notified live over WebSocket
+- 💰 Deposits via Binance Pay (QR) or USDT on BNB Smart Chain (BEP20, address + copy button, set `USDT_BEP20_ADDRESS`); all deposits are pending until the admin verifies and credits them
+- 💸 Withdrawals to a Binance ID or a BEP20 address, held on request and marked paid by the admin
+
 **Accounts & wallet**
 - 🔐 Two-step auth: email/password plus a **6-digit OTP emailed to the user** on every signup and login; sessions are **JWTs** (30-day expiry)
 - 📱 Fully responsive — desktop, tablet and phone layouts (trade controls dock to the bottom on mobile, trades list becomes a slide-up sheet)

@@ -160,6 +160,10 @@ const MODAL_ROUTES = {
   '/help': () => openModal('#help-modal'),
   '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); },
   '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); },
+  '/admin': () => {
+    if (!state.user?.isAdmin) return navigate('/trade', true);
+    showAdmin();
+  },
 };
 const TITLES = {
   '/login': 'Log in',
@@ -169,6 +173,7 @@ const TITLES = {
   '/help': 'How to trade',
   '/deposit': 'Deposit',
   '/withdraw': 'Withdrawal',
+  '/admin': 'Admin',
 };
 
 let appEntered = false;
@@ -227,6 +232,7 @@ async function boot() {
   state.assets = meta.assets;
   state.durations = meta.durations;
   state.timeframes = meta.timeframes;
+  state.usdtAddress = meta.usdtAddress || '';
   state.durationIdx = Math.max(0, meta.durations.indexOf(60));
   state.asset = state.assets.find((a) => a.id === localStorage.getItem('tb_asset')) || state.assets[0];
   state.tf = Number(localStorage.getItem('tb_tf')) || meta.timeframes[0];
@@ -247,6 +253,7 @@ async function enterApp() {
   $('#avatar').textContent = (state.user.name || 'T')[0].toUpperCase();
   $('#um-name').textContent = state.user.name;
   $('#um-email').textContent = state.user.email;
+  $('#menu-admin-btn').classList.toggle('hidden', !state.user.isAdmin);
   renderBalances(state.user.balances);
   renderTfButtons();
   renderAssetHeader();
@@ -274,6 +281,10 @@ function connectWS() {
     if (msg.type === 'ticks') { state.lastTickAt = Date.now(); onTicks(msg); }
     else if (msg.type === 'trade_settled') onTradeSettled(msg);
     else if (msg.type === 'candles_changed' && state.asset && msg.asset === state.asset.id) loadCandles();
+    else if (msg.type === 'wallet_update') {
+      renderBalances(msg.balances);
+      toast(msg.kind || '', 'Wallet update', msg.message);
+    }
   };
   ws.onclose = () => setTimeout(() => { if (!document.hidden) connectWS(); }, 1500);
 }
@@ -642,14 +653,42 @@ $('#deposit-quick').addEventListener('click', (e) => {
   if (amt) $('#deposit-amount').value = amt;
 });
 
-// Show the Binance Pay QR only when that method is selected; the confirm
-// button reads "I have paid" for Binance, "Deposit" for the others.
+// Show a loading spinner until the QR image finishes loading (or fails over
+// to its fallbacks). If the image already loaded once, skip the spinner.
+function prepQr(imgId, spinId) {
+  const img = $(`#${imgId}`);
+  const spin = $(`#${spinId}`);
+  if (img.style.display !== 'none' && img.complete && img.naturalWidth > 0) {
+    spin.style.display = 'none';
+    return;
+  }
+  if (img.style.display === 'none' && img.complete) return; // already failed over
+  spin.style.display = 'flex';
+}
+
+// Toggle the per-method payment boxes and the confirm button label.
 function syncDepositMethod() {
-  const isBinance = $('#deposit-method').value === 'binance';
-  $('#binance-pay-box').style.display = isBinance ? 'block' : 'none';
-  $('#deposit-confirm').textContent = isBinance ? 'I have paid' : 'Deposit';
+  const method = $('#deposit-method').value;
+  $('#binance-pay-box').style.display = method === 'binance' ? 'block' : 'none';
+  $('#usdt-pay-box').style.display = method === 'usdt' ? 'block' : 'none';
+  $('#deposit-confirm').textContent = method === 'bank' ? 'Request deposit' : 'I have paid';
+  if (method === 'binance') prepQr('binance-qr-img', 'binance-qr-spin');
+  if (method === 'usdt') {
+    prepQr('usdt-qr-img', 'usdt-qr-spin');
+    $('#usdt-address').textContent = state.usdtAddress || 'USDT address not configured yet';
+    $('#usdt-copy').style.display = state.usdtAddress ? '' : 'none';
+  }
 }
 $('#deposit-method').addEventListener('change', syncDepositMethod);
+
+$('#usdt-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(state.usdtAddress);
+    toast('win', 'Address copied', 'Paste it in your wallet — network must be BEP20.');
+  } catch {
+    toast('error', 'Copy failed', 'Select and copy the address manually.');
+  }
+});
 
 $('#deposit-confirm').addEventListener('click', async () => {
   const method = $('#deposit-method').value;
@@ -658,19 +697,17 @@ $('#deposit-confirm').addEventListener('click', async () => {
     const data = await api('/api/deposit', { body: { amount, method } });
     renderBalances(data.balances);
     dismissModals();
-    if (data.pending) {
-      toast('', 'Deposit received', `We're confirming your ${fmtMoney(amount)} Binance Pay transfer. Your balance updates within a few hours.`);
-    } else {
-      toast('win', 'Deposit successful', `${fmtMoney(amount)} added to your live account.`);
-    }
+    toast('', 'Deposit request received', `We're confirming your ${fmtMoney(amount)} transfer. Your balance will be credited after verification.`);
   } catch (err) {
     toast('error', 'Deposit failed', err.message);
   }
 });
 
-// Binance ID field only applies to the Binance Pay method
+// Per-method detail fields for withdrawals
 function syncWithdrawMethod() {
-  $('#withdraw-binance-field').style.display = $('#withdraw-method').value === 'binance' ? 'block' : 'none';
+  const method = $('#withdraw-method').value;
+  $('#withdraw-binance-field').style.display = method === 'binance' ? 'block' : 'none';
+  $('#withdraw-usdt-field').style.display = method === 'usdt' ? 'block' : 'none';
 }
 $('#withdraw-method').addEventListener('change', syncWithdrawMethod);
 
@@ -678,16 +715,61 @@ $('#withdraw-confirm').addEventListener('click', async () => {
   const method = $('#withdraw-method').value;
   const amount = Number($('#withdraw-amount').value);
   const binanceId = $('#withdraw-binance-id').value.trim();
+  const address = $('#withdraw-usdt-address').value.trim();
   try {
-    const data = await api('/api/withdraw', { body: { amount, method, binanceId } });
+    const data = await api('/api/withdraw', { body: { amount, method, binanceId, address } });
     renderBalances(data.balances);
     dismissModals();
-    toast('win', 'Withdrawal in progress',
-      `${fmtMoney(amount)} is on its way${method === 'binance' ? ` to Binance ID ${binanceId}` : ''}. You'll receive it within 24–48 hours.`);
+    const dest = method === 'binance' ? ` to Binance ID ${binanceId}` : method === 'usdt' ? ' to your USDT (BEP20) address' : '';
+    toast('win', 'Withdrawal in progress', `${fmtMoney(amount)} is on its way${dest}. You'll receive it within 24–48 hours.`);
   } catch (err) {
     toast('error', 'Withdrawal failed', err.message);
   }
 });
+
+// ---------------------------------------------------------------- admin panel
+
+async function showAdmin() {
+  openModal('#admin-modal');
+  const wrap = $('#admin-list');
+  wrap.innerHTML = '<div class="trades-empty">Loading…</div>';
+  try {
+    const { requests } = await api('/api/admin/requests');
+    wrap.innerHTML = requests.length
+      ? requests.map((r) => `
+        <div class="admin-row">
+          <span class="ar-type ${r.type}">${r.type === 'deposit' ? '⬇ Deposit' : '⬆ Withdrawal'}</span>
+          <div class="ar-mid">
+            <div class="ar-user">${escapeHtml(r.name)} · ${escapeHtml(r.email)}</div>
+            <div class="ar-sub">${escapeHtml(r.method)}${r.binanceId ? ' · Binance ID ' + escapeHtml(r.binanceId) : ''}${r.address ? ' · ' + escapeHtml(r.address) : ''} · ${new Date(r.time).toLocaleString()}</div>
+          </div>
+          <div class="ar-amt">${fmtMoney(r.amount)}</div>
+          <div class="ar-actions">
+            <button class="ar-approve" data-tx="${r.id}" data-act="approve">${r.type === 'deposit' ? 'Credit' : 'Mark paid'}</button>
+            <button class="ar-reject" data-tx="${r.id}" data-act="reject">Reject</button>
+          </div>
+        </div>`).join('')
+      : '<div class="trades-empty">No pending requests 🎉</div>';
+  } catch (err) {
+    wrap.innerHTML = `<div class="trades-empty">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+$('#admin-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-tx]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/admin/requests/${btn.dataset.tx}/${btn.dataset.act}`, { method: 'POST', body: {} });
+    toast(btn.dataset.act === 'approve' ? 'win' : '', btn.dataset.act === 'approve' ? 'Approved' : 'Rejected', 'The user has been notified.');
+    showAdmin();
+  } catch (err) {
+    toast('error', 'Action failed', err.message);
+    btn.disabled = false;
+  }
+});
+
+$('#menu-admin-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/admin'); });
 
 async function showLeaderboard() {
   openModal('#top-modal');

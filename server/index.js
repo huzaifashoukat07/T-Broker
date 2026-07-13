@@ -113,7 +113,12 @@ app.get('/api/me', auth, handle((req, res) => {
 // --- market data -------------------------------------------------------------
 
 app.get('/api/assets', handle((req, res) => {
-  res.json({ assets: market.listAssets(), timeframes: TIMEFRAMES, durations: DURATIONS });
+  res.json({
+    assets: market.listAssets(),
+    timeframes: TIMEFRAMES,
+    durations: DURATIONS,
+    usdtAddress: process.env.USDT_BEP20_ADDRESS || '',
+  });
 }));
 
 app.get('/api/candles', handle((req, res) => {
@@ -175,41 +180,95 @@ app.get('/api/trades', auth, handle((req, res) => {
 
 // --- wallet ------------------------------------------------------------------
 
+const DEPOSIT_METHODS = ['binance', 'usdt', 'bank'];
+
+// All deposits are real manual transfers (Binance Pay / USDT BEP20 / bank):
+// the money lands in the operator's wallet, so balances are NEVER credited
+// automatically — claiming to have paid must not mint balance. Requests are
+// logged as pending and the admin credits them from the admin panel.
 app.post('/api/deposit', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt < 10 || amt > 50000) throw new ApiError('Deposit must be between $10 and $50,000');
-  const method = req.body?.method || 'card';
-
-  // Binance Pay is a real manual transfer: the money lands in the operator's
-  // Binance wallet, so the account balance is NOT credited automatically —
-  // only claiming to have paid must never mint balance. It is logged as a
-  // pending request for the operator to confirm and credit.
-  if (method === 'binance') {
-    store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'pending' });
-    return res.json({ pending: true, balances: store.balances(req.user) });
-  }
-
-  store.adjust(req.user, 'live', amt);
-  store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'completed' });
-  res.json({ balances: store.balances(req.user) });
+  const method = DEPOSIT_METHODS.includes(req.body?.method) ? req.body.method : 'binance';
+  store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'pending' });
+  res.json({ pending: true, balances: store.balances(req.user) });
 }));
 
 app.post('/api/withdraw', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt <= 0) throw new ApiError('Enter a valid amount');
   if (req.user.liveBalance < amt) throw new ApiError('Insufficient live balance');
-  const method = req.body?.method || 'binance';
+  const method = DEPOSIT_METHODS.includes(req.body?.method) ? req.body.method : 'binance';
   const binanceId = String(req.body?.binanceId || '').trim();
+  const address = String(req.body?.address || '').trim();
   if (method === 'binance' && !/^[0-9]{6,15}$/.test(binanceId)) {
     throw new ApiError('Enter a valid Binance ID (the numeric ID from your Binance profile)');
+  }
+  if (method === 'usdt' && !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    throw new ApiError('Enter a valid BEP20 address (starts with 0x, 42 characters)');
   }
   // Funds are held immediately; the payout is sent manually within 24–48h.
   store.adjust(req.user, 'live', -amt);
   store.addTransaction(req.user, {
     type: 'withdrawal', amount: amt, method, status: 'pending',
     ...(binanceId ? { binanceId } : {}),
+    ...(address ? { address } : {}),
   });
   res.json({ balances: store.balances(req.user), pending: true });
+}));
+
+// --- admin: approve / reject deposit & withdrawal requests -------------------
+
+function adminOnly(req, res, next) {
+  if (!store.isAdmin(req.user)) return res.status(403).json({ error: 'Admins only' });
+  next();
+}
+
+app.get('/api/admin/requests', auth, adminOnly, handle((req, res) => {
+  const requests = [];
+  for (const u of store.users.values()) {
+    for (const tx of u.transactions) {
+      if (tx.status === 'pending') requests.push({ ...tx, userId: u.id, email: u.email, name: u.name });
+    }
+  }
+  requests.sort((a, b) => b.time - a.time);
+  res.json({ requests });
+}));
+
+app.post('/api/admin/requests/:txId/:action', auth, adminOnly, handle((req, res) => {
+  const { txId, action } = req.params;
+  if (action !== 'approve' && action !== 'reject') throw new ApiError('Unknown action');
+  let tx = null, user = null;
+  for (const u of store.users.values()) {
+    const found = u.transactions.find((t) => t.id === txId);
+    if (found) { tx = found; user = u; break; }
+  }
+  if (!tx) throw new ApiError('Request not found', 404);
+  if (tx.status !== 'pending') throw new ApiError('Request was already processed');
+
+  if (action === 'approve') {
+    tx.status = 'completed';
+    if (tx.type === 'deposit') store.adjust(user, 'live', tx.amount); // credit now
+    notifyUser(user.id, {
+      type: 'wallet_update',
+      balances: store.balances(user),
+      kind: tx.type === 'deposit' ? 'win' : '',
+      message: tx.type === 'deposit'
+        ? `Deposit approved — $${tx.amount.toFixed(2)} added to your live account`
+        : `Withdrawal of $${tx.amount.toFixed(2)} has been sent`,
+    });
+  } else {
+    tx.status = 'rejected';
+    if (tx.type === 'withdrawal') store.adjust(user, 'live', tx.amount); // release held funds
+    notifyUser(user.id, {
+      type: 'wallet_update',
+      balances: store.balances(user),
+      kind: 'loss',
+      message: `Your ${tx.type} request of $${tx.amount.toFixed(2)} was rejected`,
+    });
+  }
+  store.save(user);
+  res.json({ ok: true });
 }));
 
 app.post('/api/reset-demo', auth, handle((req, res) => {

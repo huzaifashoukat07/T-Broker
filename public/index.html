@@ -99,6 +99,7 @@
         <button id="tx-btn">Transactions</button>
         <button id="menu-top-btn">Leaderboard</button>
         <button id="menu-help-btn">How to trade</button>
+        <button id="menu-admin-btn" class="hidden">🛠 Admin panel</button>
         <button id="logout-btn" class="danger">Log out</button>
       </div>
     </div>
@@ -208,8 +209,7 @@
     <div class="field"><label>Payment method</label>
       <select id="deposit-method">
         <option value="binance">🅑 Binance Pay</option>
-        <option value="card">💳 Visa / Mastercard</option>
-        <option value="crypto">₿ Crypto (BTC/USDT)</option>
+        <option value="usdt">₮ USDT (BEP20)</option>
         <option value="bank">🏦 Bank transfer</option>
       </select>
     </div>
@@ -225,11 +225,38 @@
         </ol>
       </div>
       <div class="bp-qr">
-        <img src="img/binance-qr.png" alt="Binance Pay QR code" id="binance-qr-img"
+        <div class="qr-spin" id="binance-qr-spin"><span></span>Loading QR…</div>
+        <img src="img/binance-qr.png" alt="Binance Pay QR code" id="binance-qr-img" style="display:none"
              data-fallbacks="img/binance-qr.jpg,img/binance-qr.jpeg"
-             onerror="var f=(this.dataset.fallbacks||'').split(',').filter(Boolean);if(f.length){this.dataset.fallbacks=f.slice(1).join(',');this.src=f[0];}else{this.style.display='none';document.getElementById('binance-qr-missing').style.display='block';}">
+             onload="this.style.display='inline-block';document.getElementById('binance-qr-spin').style.display='none';"
+             onerror="var f=(this.dataset.fallbacks||'').split(',').filter(Boolean);if(f.length){this.dataset.fallbacks=f.slice(1).join(',');this.src=f[0];}else{this.style.display='none';document.getElementById('binance-qr-spin').style.display='none';document.getElementById('binance-qr-missing').style.display='block';}">
         <div id="binance-qr-missing" class="bp-qr-missing" style="display:none">Binance Pay QR not configured yet.</div>
         <span class="bp-qr-cap">Scan with Binance Pay</span>
+      </div>
+    </div>
+
+    <!-- USDT BEP20: address + optional QR -->
+    <div id="usdt-pay-box" class="binance-pay" style="display:none">
+      <div class="bp-steps">
+        <div class="bp-title">Deposit USDT (BEP20)</div>
+        <ol>
+          <li>In your wallet or exchange, choose <b>USDT</b> withdrawal.</li>
+          <li>Select network <b>BNB Smart Chain (BEP20)</b>.</li>
+          <li>Send the exact amount above to the address below, then tap “I have paid”.</li>
+        </ol>
+        <p class="usdt-warn">⚠ Send only <b>USDT on BEP20</b>. Other coins or other networks will be lost.</p>
+      </div>
+      <div class="usdt-address-row">
+        <code id="usdt-address">—</code>
+        <button type="button" id="usdt-copy">Copy</button>
+      </div>
+      <div class="bp-qr" id="usdt-qr-wrap">
+        <div class="qr-spin" id="usdt-qr-spin"><span></span>Loading QR…</div>
+        <img src="img/usdt-qr.png" alt="USDT BEP20 deposit QR" id="usdt-qr-img" style="display:none"
+             data-fallbacks="img/usdt-qr.jpg,img/usdt-qr.jpeg"
+             onload="this.style.display='inline-block';document.getElementById('usdt-qr-spin').style.display='none';"
+             onerror="var f=(this.dataset.fallbacks||'').split(',').filter(Boolean);if(f.length){this.dataset.fallbacks=f.slice(1).join(',');this.src=f[0];}else{this.style.display='none';document.getElementById('usdt-qr-spin').style.display='none';}">
+        <span class="bp-qr-cap">Scan to get the address</span>
       </div>
     </div>
 
@@ -243,8 +270,7 @@
     <div class="field"><label>Method</label>
       <select id="withdraw-method">
         <option value="binance">🅑 Binance Pay</option>
-        <option value="card">💳 Visa / Mastercard</option>
-        <option value="crypto">₿ Crypto (BTC/USDT)</option>
+        <option value="usdt">₮ USDT (BEP20)</option>
         <option value="bank">🏦 Bank transfer</option>
       </select>
     </div>
@@ -253,7 +279,18 @@
       <input type="text" id="withdraw-binance-id" inputmode="numeric" placeholder="e.g. 123456789">
       <span class="field-hint">Find it in the Binance app under Profile — we send your payout to this ID.</span>
     </div>
+    <div class="field" id="withdraw-usdt-field" style="display:none">
+      <label>Your USDT address (BEP20)</label>
+      <input type="text" id="withdraw-usdt-address" placeholder="0x…" spellcheck="false">
+      <span class="field-hint">Double-check the address — payouts sent to a wrong address cannot be recovered.</span>
+    </div>
     <button class="btn-primary" id="withdraw-confirm">Request withdrawal</button>
+  </div>
+
+  <div class="modal modal-wide hidden" id="admin-modal">
+    <div class="modal-head"><h3>🛠 Admin — pending requests</h3><button class="modal-close">✕</button></div>
+    <p class="modal-sub">Deposits: verify the money arrived in your wallet <b>before</b> crediting. Withdrawals: send the payout first, then mark it paid.</p>
+    <div class="admin-list" id="admin-list"></div>
   </div>
 
   <div class="modal hidden" id="top-modal">

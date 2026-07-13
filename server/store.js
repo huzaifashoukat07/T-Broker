@@ -278,12 +278,21 @@ class Store {
     this.save(user);
   }
 
+  // Admins are designated by email via the ADMIN_EMAILS env var
+  // (comma-separated). They can approve/reject deposit & withdrawal requests.
+  isAdmin(user) {
+    const admins = String(process.env.ADMIN_EMAILS || '')
+      .toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+    return admins.includes(user.email);
+  }
+
   publicUser(user) {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       balances: this.balances(user),
+      isAdmin: this.isAdmin(user),
       createdAt: user.createdAt,
     };
   }
