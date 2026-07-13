@@ -14,12 +14,17 @@ if (process.env.SMTP_HOST) {
   transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
-    secure: port === 465,
+    secure: port === 465, // 465 = implicit TLS; 587 uses STARTTLS
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
       : undefined,
   });
-  console.log(`[mail] SMTP configured: ${process.env.SMTP_HOST}:${port}`);
+  console.log(`[mail] SMTP configured: ${process.env.SMTP_HOST}:${port} — verifying…`);
+  // Verify credentials at startup so problems surface immediately instead of
+  // only when the first user tries to sign up.
+  transport.verify()
+    .then(() => console.log('[mail] SMTP connection OK — OTP codes will be emailed'))
+    .catch((e) => console.error(`[mail] SMTP verify FAILED (${e.message}) — check SMTP_USER/SMTP_PASS. Emails will fail; codes still print to console`));
 } else {
   console.log('[mail] SMTP not configured — verification codes will be printed to this console (set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS to send real emails)');
 }
