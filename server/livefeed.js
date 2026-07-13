@@ -87,7 +87,8 @@ class LiveFeed {
   }
 
   // Fetch real history so charts show actual market candles on load:
-  // 1s klines (~50 min) cover the 5s-60s timeframes, 1m klines cover 1m/5m.
+  // 1s klines (~50 min) cover the 5s-60s timeframes, 1m klines cover 1m/5m,
+  // and 1h/1d klines give ~25 days and ~20 months of genuine history.
   async seedAll() {
     for (const [symbol, assetId] of this.symbols) {
       try {
@@ -99,15 +100,19 @@ class LiveFeed {
           oneSec.push(...batch);
         }
         const oneMin = await getJSON(`${REST_BASE}/api/v3/klines?symbol=${symbol}&interval=1m&limit=600`);
+        const oneHour = await getJSON(`${REST_BASE}/api/v3/klines?symbol=${symbol}&interval=1h&limit=600`);
+        const oneDay = await getJSON(`${REST_BASE}/api/v3/klines?symbol=${symbol}&interval=1d&limit=600`);
         const candles = {
           5: aggregate(oneSec, 5),
           15: aggregate(oneSec, 15),
           30: aggregate(oneSec, 30),
           60: aggregate(oneMin, 60),
           300: aggregate(oneMin, 300),
+          3600: aggregate(oneHour, 3600),
+          86400: aggregate(oneDay, 86400),
         };
         this.market.replaceCandles(assetId, candles);
-        console.log(`[livefeed] ${assetId}: loaded real history from Binance (${symbol})`);
+        console.log(`[livefeed] ${assetId}: loaded real history from Binance (${symbol}, incl. 1h/1D)`);
       } catch (e) {
         console.log(`[livefeed] ${assetId}: history unavailable (${e.message}) — using simulated history`);
       }

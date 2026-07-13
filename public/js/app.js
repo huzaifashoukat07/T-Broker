@@ -329,7 +329,7 @@ function onTradeSettled(msg) {
 // ---------------------------------------------------------------- chart data
 
 async function loadCandles() {
-  const { candles } = await api(`/api/candles?asset=${state.asset.id}&tf=${state.tf}&limit=400`);
+  const { candles } = await api(`/api/candles?asset=${state.asset.id}&tf=${state.tf}&limit=600`);
   chart.setData(candles, state.asset.decimals, state.tf);
   syncChartTrades();
 }
@@ -340,7 +340,7 @@ function renderTfButtons() {
   for (const tf of state.timeframes) {
     const btn = document.createElement('button');
     btn.className = 'tf-btn' + (tf === state.tf ? ' active' : '');
-    btn.textContent = tf < 60 ? `${tf}s` : `${tf / 60}m`;
+    btn.textContent = tf < 60 ? `${tf}s` : tf < 3600 ? `${tf / 60}m` : tf < 86400 ? `${tf / 3600}h` : `${tf / 86400}D`;
     btn.addEventListener('click', () => {
       state.tf = tf;
       localStorage.setItem('tb_tf', tf);

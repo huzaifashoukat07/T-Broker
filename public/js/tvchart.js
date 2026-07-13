@@ -26,6 +26,7 @@ class CandleChart {
         timeVisible: true,
         secondsVisible: true,
         rightOffset: 6,
+        fixLeftEdge: true, // never scroll past the first candle into empty space
       },
       crosshair: {
         mode: LightweightCharts.CrosshairMode.Normal,
@@ -66,6 +67,10 @@ class CandleChart {
     this.candles = [...byTime.values()].sort((a, b) => a.time - b.time);
     this.series.applyOptions({
       priceFormat: { type: 'price', precision: decimals, minMove: Number((10 ** -decimals).toFixed(decimals)) },
+    });
+    // axis labels match the timeframe: seconds on fast charts, dates on 1D
+    this.chart.applyOptions({
+      timeScale: { secondsVisible: tf < 60, timeVisible: tf < 86400 },
     });
     this.series.setData(this.candles);
     this.chart.timeScale().scrollToRealTime();

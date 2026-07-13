@@ -21,8 +21,8 @@ const ASSETS = [
   { id: 'MSFT',    name: 'Microsoft',      group: 'Stocks',       price: 447.60,  vol: 0.00016, decimals: 2, payout: 0.75 },
 ];
 
-const TIMEFRAMES = [5, 15, 30, 60, 300]; // seconds
-const MAX_CANDLES = 600;
+const TIMEFRAMES = [5, 15, 30, 60, 300, 3600, 86400]; // seconds (5s … 1h, 1D)
+const MAX_CANDLES = 600; // per timeframe: 600×1D ≈ 20 months of history
 const TICK_MS = 500;
 
 function gauss() {
@@ -49,14 +49,39 @@ class Market {
     this.seedHistory();
   }
 
-  // Generate ~50 minutes of 1-second history so charts are full on first load.
+  // Backfill a full MAX_CANDLES of history for EVERY timeframe of every
+  // asset, so charts are never empty no matter how far back you scroll —
+  // 600 daily candles reach ~20 months into the past. Each timeframe is
+  // generated as its own random walk (volatility scaled by candle length,
+  // capped so daily moves stay realistic) and rescaled so all timeframes
+  // end exactly at the asset's current price. Live feeds later overwrite
+  // crypto with real Binance history.
   seedHistory() {
     const now = Math.floor(Date.now() / 1000);
-    const span = MAX_CANDLES * 5 + 300; // enough for the 5s timeframe, partial for larger
     for (const a of this.assets.values()) {
-      for (let t = now - span; t <= now; t++) {
-        this.step(a);
-        this.applyTick(a, t);
+      for (const tf of TIMEFRAMES) {
+        const effVol = a.vol * Math.min(Math.sqrt(tf), 60);
+        const lastBucket = Math.floor(now / tf) * tf;
+        const arr = [];
+        let price = a.base;
+        let momentum = 0;
+        for (let i = MAX_CANDLES - 1; i >= 0; i--) {
+          const t = lastBucket - i * tf;
+          const o = price;
+          momentum = momentum * 0.9 + gauss() * effVol * 0.2;
+          const reversion = ((a.base - o) / a.base) * 0.01;
+          const c = o * (1 + gauss() * effVol + momentum + reversion);
+          const h = Math.max(o, c) * (1 + Math.abs(gauss()) * effVol * 0.5);
+          const l = Math.min(o, c) * (1 - Math.abs(gauss()) * effVol * 0.5);
+          arr.push({ t, o, h, l, c });
+          price = c;
+        }
+        // pin the end of history to the live price
+        const ratio = a.price / arr[arr.length - 1].c;
+        for (const c of arr) {
+          c.o *= ratio; c.h *= ratio; c.l *= ratio; c.c *= ratio;
+        }
+        a.candles[tf] = arr;
       }
     }
   }

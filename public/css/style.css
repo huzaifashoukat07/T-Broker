@@ -205,7 +205,13 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px 6px;
 }
-.tf-group { display: flex; gap: 4px; background: var(--panel); border-radius: 9px; padding: 3px; }
+.tf-group {
+  display: flex; gap: 4px; background: var(--panel); border-radius: 9px; padding: 3px;
+  overflow-x: auto; scrollbar-width: none; /* 7 buttons: scroll on narrow screens */
+  min-width: 0; /* allow shrinking inside the flex row so it scrolls instead of overflowing */
+}
+.tf-group::-webkit-scrollbar { display: none; }
+.tf-btn { flex-shrink: 0; }
 .tf-btn { padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .tf-btn:hover { color: var(--text); }
 .tf-btn.active { background: var(--accent); color: #fff; }
@@ -477,7 +483,7 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   .balance-label { display: none; }
   .chart-price { display: none; } /* the chart's own price label covers this */
   .chart-head { gap: 8px; }
-  .tf-group { flex-shrink: 0; }
+  .chart-asset-info { flex-shrink: 0; }
 }
 
 /* Scrollbars */
