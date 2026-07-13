@@ -646,6 +646,10 @@ $('#asset-search').addEventListener('input', () => renderAssetList($('#asset-sea
 
 $('#deposit-btn').addEventListener('click', () => navigate('/deposit'));
 $('#withdraw-btn').addEventListener('click', () => navigate('/withdraw'));
+// balance dropdown + avatar menu entries (main way to reach these on mobile)
+$('#bm-deposit-btn').addEventListener('click', () => { $('#balance-menu').classList.add('hidden'); navigate('/deposit'); });
+$('#bm-withdraw-btn').addEventListener('click', () => { $('#balance-menu').classList.add('hidden'); navigate('/withdraw'); });
+$('#menu-withdraw-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/withdraw'); });
 $('#rail-help').addEventListener('click', () => navigate('/help'));
 
 $('#deposit-quick').addEventListener('click', (e) => {
@@ -739,10 +743,13 @@ async function submitDeposit() {
 $('#binance-paid-btn').addEventListener('click', submitDeposit);
 $('#crypto-paid-btn').addEventListener('click', submitDeposit);
 
-// --- withdrawals: per-method detail fields -----------------------------------
+// --- withdrawals: method tiles + per-method detail fields --------------------
+
+state.withdrawMethod = 'binance';
 
 function syncWithdrawMethod() {
-  const method = $('#withdraw-method').value;
+  const method = state.withdrawMethod;
+  $$('#wd-grid .pm-tile').forEach((t) => t.classList.toggle('active', t.dataset.method === method));
   $('#withdraw-binance-field').style.display = method === 'binance' ? 'block' : 'none';
   const isCrypto = method.startsWith('usdt-');
   $('#withdraw-usdt-field').style.display = isCrypto ? 'block' : 'none';
@@ -752,10 +759,15 @@ function syncWithdrawMethod() {
     $('#withdraw-usdt-address').placeholder = trc ? 'T…' : '0x…';
   }
 }
-$('#withdraw-method').addEventListener('change', syncWithdrawMethod);
+$('#wd-grid').addEventListener('click', (e) => {
+  const tile = e.target.closest('.pm-tile');
+  if (!tile) return;
+  state.withdrawMethod = tile.dataset.method;
+  syncWithdrawMethod();
+});
 
 $('#withdraw-confirm').addEventListener('click', async () => {
-  const method = $('#withdraw-method').value;
+  const method = state.withdrawMethod;
   const amount = Number($('#withdraw-amount').value);
   const binanceId = $('#withdraw-binance-id').value.trim();
   const address = $('#withdraw-usdt-address').value.trim();
