@@ -35,6 +35,7 @@
           <label>Password</label>
           <input type="password" id="auth-password" placeholder="••••••••" required minlength="6" autocomplete="current-password">
         </div>
+        <button type="button" id="forgot-link" class="forgot-link">Forgot password?</button>
       </div>
       <div id="step-otp" class="hidden">
         <p class="otp-info">Enter the 6-digit code we sent to<br><b id="otp-email">you@example.com</b></p>
@@ -346,9 +347,21 @@
   </div>
 
   <div class="modal modal-wide hidden" id="admin-modal">
-    <div class="modal-head"><h3>🛠 Admin — pending requests</h3><button class="modal-close">✕</button></div>
-    <p class="modal-sub">Deposits: verify the money arrived in your wallet <b>before</b> crediting. Withdrawals: send the payout first, then mark it paid.</p>
-    <div class="admin-list" id="admin-list"></div>
+    <div class="modal-head"><h3>🛠 Admin panel</h3><button class="modal-close">✕</button></div>
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-atab="requests">Requests <span class="badge" id="admin-req-count">0</span></button>
+      <button class="admin-tab" data-atab="users">Users <span class="badge" id="admin-user-count">0</span></button>
+    </div>
+
+    <div class="admin-pane" id="admin-pane-requests">
+      <p class="modal-sub">Deposits: verify the money arrived in your wallet <b>before</b> crediting. Withdrawals: send the payout first, then mark it paid.</p>
+      <div class="admin-list" id="admin-list"></div>
+    </div>
+
+    <div class="admin-pane hidden" id="admin-pane-users">
+      <input type="text" class="modal-search" id="admin-user-search" placeholder="Search by name or email…">
+      <div class="admin-list" id="admin-users-list"></div>
+    </div>
   </div>
 
   <div class="modal hidden" id="top-modal">

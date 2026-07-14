@@ -77,6 +77,12 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .auth-note { margin-top: 18px; text-align: center; color: var(--muted); font-size: 12.5px; }
 .auth-note b { color: var(--up); }
 
+.forgot-link {
+  display: block; margin: -4px 0 4px auto; color: var(--accent);
+  font-size: 12.5px; font-weight: 600; padding: 2px 0;
+}
+.forgot-link:hover { text-decoration: underline; }
+
 /* OTP step */
 .otp-info { text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.6; margin-bottom: 16px; }
 .otp-info b { color: var(--text); }
@@ -470,8 +476,17 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 #binance-pay-modal .modal-head h3, #crypto-modal .modal-head h3 { flex: 1; }
 
 /* Admin panel */
-.modal-wide { width: 640px; }
+.modal-wide { width: 680px; }
+.admin-tabs { display: flex; gap: 4px; background: var(--bg-2); padding: 3px; border-radius: 9px; margin-bottom: 14px; }
+.admin-tab { flex: 1; padding: 8px; border-radius: 7px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.admin-tab.active { background: var(--panel-2); color: var(--text); }
+.admin-pane { max-height: 62vh; overflow-y: auto; }
 .admin-list { display: flex; flex-direction: column; gap: 8px; }
+.user-row .ar-stats { color: var(--muted); font-size: 11px; margin-top: 3px; }
+.ar-bal { text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ar-bal b { color: var(--text); font-size: 13px; }
+.bl-label { font-size: 9px; font-weight: 800; letter-spacing: .4px; }
+.ar-bal div:first-child .bl-label { color: var(--up); }
 .admin-row {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px;

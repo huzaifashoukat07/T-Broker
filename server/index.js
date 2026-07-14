@@ -128,6 +128,18 @@ app.post('/api/verify-otp', handle((req, res) => {
   res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
 }));
 
+// Forgot password: sends an OTP; new password applied on verify-otp.
+// Always reports otpRequired so a missing account isn't revealed.
+app.post('/api/forgot-password', handle(async (req, res) => {
+  const { email, password } = req.body || {};
+  const pending = store.beginReset(email, password);
+  if (pending) {
+    await dispatchOtp(res, pending, 'password reset');
+  } else {
+    res.json({ otpRequired: true, email: String(email || '').trim().toLowerCase(), emailSent: true });
+  }
+}));
+
 app.post('/api/resend-otp', handle(async (req, res) => {
   const pending = store.resendOtp(req.body?.email);
   await dispatchOtp(res, pending, 'verification');
@@ -301,6 +313,52 @@ app.post('/api/admin/requests/:txId/:action', auth, adminOnly, handle((req, res)
   }
   store.save(user);
   res.json({ ok: true });
+}));
+
+// --- admin: user management -------------------------------------------------
+
+app.get('/api/admin/users', auth, adminOnly, handle((req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const users = [...store.users.values()]
+    .filter((u) => !q || u.email.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((u) => {
+      const wins = u.trades.filter((t) => t.status === 'won').length;
+      const losses = u.trades.filter((t) => t.status === 'lost').length;
+      const pending = u.transactions.filter((t) => t.status === 'pending').length;
+      const deposited = u.transactions
+        .filter((t) => t.type === 'deposit' && t.status === 'completed')
+        .reduce((s, t) => s + t.amount, 0);
+      return {
+        id: u.id, name: u.name, email: u.email, createdAt: u.createdAt,
+        demo: round2(u.demoBalance), live: round2(u.liveBalance),
+        trades: u.trades.length, wins, losses, pending, deposited: round2(deposited),
+        isAdmin: store.isAdmin(u),
+      };
+    });
+  res.json({ users, count: users.length });
+}));
+
+// Adjust a user's balance directly (credit or debit). delta may be negative.
+app.post('/api/admin/users/:userId/adjust', auth, adminOnly, handle((req, res) => {
+  const user = store.get(req.params.userId);
+  if (!user) throw new ApiError('User not found', 404);
+  const account = req.body?.account === 'demo' ? 'demo' : 'live';
+  const delta = Math.round(Number(req.body?.delta) * 100) / 100;
+  if (!Number.isFinite(delta) || delta === 0) throw new ApiError('Enter a non-zero amount');
+  const current = account === 'live' ? user.liveBalance : user.demoBalance;
+  if (current + delta < 0) throw new ApiError('Adjustment would make the balance negative');
+  store.adjust(user, account, delta);
+  store.addTransaction(user, {
+    type: delta > 0 ? 'deposit' : 'withdrawal',
+    amount: Math.abs(delta), method: 'admin', status: 'completed',
+  });
+  notifyUser(user.id, {
+    type: 'wallet_update', balances: store.balances(user),
+    kind: delta > 0 ? 'win' : 'loss',
+    message: `An admin ${delta > 0 ? 'credited' : 'debited'} $${Math.abs(delta).toFixed(2)} ${delta > 0 ? 'to' : 'from'} your ${account} account`,
+  });
+  res.json({ ok: true, balances: store.balances(user) });
 }));
 
 app.post('/api/reset-demo', auth, handle((req, res) => {
