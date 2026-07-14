@@ -85,70 +85,112 @@ function sendViaBrevo(to, subject, html, text) {
   });
 }
 
-// Returns true if the email was actually sent, false in dev/console mode.
-async function sendOtp(email, code, purpose) {
-  if (!transport && !BREVO_KEY) {
-    console.log(`[mail] ${purpose} code for ${email}: ${code}`);
-    return false;
-  }
+// Branded email shell: wraps arbitrary body HTML in the NovaTrade header,
+// signature and footer (the same box style as the OTP email).
+function shell(bodyHtml) {
   const year = new Date().getFullYear();
-  const subject = `${code} is your ${BRAND} verification code`;
-  const text =
-`Your ${BRAND} ${purpose} code is: ${code}
-
-This code expires in 5 minutes. Never share it with anyone — our team will never ask you for it.
-
-If you didn't request this, you can safely ignore this email.
-
-— The ${BRAND} Team
-${SITE}
-Support: ${SUPPORT}
-
-© ${year} ${BRAND}. All rights reserved.
-This is an automated message, please do not reply.`;
-  const html = `
+  return `
   <div style="margin:0;padding:24px 12px;background:#070a12;font-family:'Segoe UI',Arial,Helvetica,sans-serif">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px;margin:0 auto">
       <tr><td style="background:#0b0f19;border:1px solid #232f4e;border-radius:16px;overflow:hidden">
-
-        <!-- header -->
         <div style="padding:26px 32px 18px;border-bottom:1px solid #1a2440">
           <span style="font-size:22px;font-weight:800;color:#e7ecf5;letter-spacing:.3px">Nova<span style="color:#2f7cf6">Trade</span></span>
         </div>
-
-        <!-- body -->
-        <div style="padding:28px 32px 12px;color:#e7ecf5">
-          <p style="margin:0 0 6px;font-size:16px;font-weight:700">Verify your ${purpose}</p>
-          <p style="margin:0 0 22px;color:#8493b3;font-size:13.5px;line-height:1.6">Enter the code below to continue. It expires in <b style="color:#e7ecf5">5 minutes</b>.</p>
-          <div style="font-size:34px;font-weight:800;letter-spacing:12px;text-align:center;color:#fff;background:#141c30;border:1px solid #2f7cf6;border-radius:12px;padding:20px 0">${code}</div>
-          <p style="margin:22px 0 0;color:#f7b32b;font-size:12.5px;line-height:1.6">🔒 Never share this code. ${BRAND} staff will never ask you for it.</p>
-          <p style="margin:14px 0 0;color:#8493b3;font-size:12.5px;line-height:1.6">If you didn't request this, you can safely ignore this email — no action is needed.</p>
-        </div>
-
-        <!-- signature -->
+        <div style="padding:28px 32px 12px;color:#e7ecf5">${bodyHtml}</div>
         <div style="padding:20px 32px;border-top:1px solid #1a2440;color:#8493b3;font-size:12.5px;line-height:1.7">
           Best regards,<br>
           <span style="color:#e7ecf5;font-weight:700">The ${BRAND} Team</span><br>
           <a href="${SITE}" style="color:#2f7cf6;text-decoration:none">${SITE.replace(/^https?:\/\//, '')}</a> &nbsp;·&nbsp;
           <a href="mailto:${SUPPORT}" style="color:#2f7cf6;text-decoration:none">${SUPPORT}</a>
         </div>
-
-        <!-- footer -->
         <div style="padding:16px 32px;background:#070a12;color:#5c6a89;font-size:11px;line-height:1.6;text-align:center">
           © ${year} ${BRAND}. All rights reserved.<br>
           This is an automated message — please do not reply directly.
         </div>
-
       </td></tr>
     </table>
   </div>`;
+}
 
-  if (BREVO_KEY) {
-    await sendViaBrevo(email, subject, html, text);
-  } else {
-    await transport.sendMail({ from: FROM, to: email, subject, replyTo: SUPPORT, text, html });
+const signatureText = () => `\n\n— The ${BRAND} Team\n${SITE}\nSupport: ${SUPPORT}\n\n© ${new Date().getFullYear()} ${BRAND}. All rights reserved.\nThis is an automated message, please do not reply.`;
+
+// Route an email through Brevo (HTTPS), SMTP, or the console fallback.
+async function deliver(email, subject, html, text) {
+  if (BREVO_KEY) return sendViaBrevo(email, subject, html, text);
+  if (transport) return transport.sendMail({ from: FROM, to: email, subject, replyTo: SUPPORT, text, html });
+  console.log(`[mail] (console) to ${email}: ${subject}`);
+}
+
+// A highlighted status/amount box (same look as the OTP code box).
+function bigBox(content, color = '#2f7cf6') {
+  return `<div style="font-size:26px;font-weight:800;text-align:center;color:#fff;background:#141c30;border:1px solid ${color};border-radius:12px;padding:18px 12px">${content}</div>`;
+}
+
+// --- OTP ---------------------------------------------------------------------
+
+async function sendOtp(email, code, purpose) {
+  if (!transport && !BREVO_KEY) {
+    console.log(`[mail] ${purpose} code for ${email}: ${code}`);
+    return false;
   }
+  const subject = `${code} is your ${BRAND} verification code`;
+  const text = `Your ${BRAND} ${purpose} code is: ${code}\n\nThis code expires in 5 minutes. Never share it with anyone — our team will never ask you for it.\n\nIf you didn't request this, you can safely ignore this email.${signatureText()}`;
+  const html = shell(`
+    <p style="margin:0 0 6px;font-size:16px;font-weight:700">Verify your ${purpose}</p>
+    <p style="margin:0 0 22px;color:#8493b3;font-size:13.5px;line-height:1.6">Enter the code below to continue. It expires in <b style="color:#e7ecf5">5 minutes</b>.</p>
+    <div style="font-size:34px;font-weight:800;letter-spacing:12px;text-align:center;color:#fff;background:#141c30;border:1px solid #2f7cf6;border-radius:12px;padding:20px 0">${code}</div>
+    <p style="margin:22px 0 0;color:#f7b32b;font-size:12.5px;line-height:1.6">🔒 Never share this code. ${BRAND} staff will never ask you for it.</p>
+    <p style="margin:14px 0 0;color:#8493b3;font-size:12.5px;line-height:1.6">If you didn't request this, you can safely ignore this email — no action is needed.</p>`);
+  await deliver(email, subject, html, text);
   return true;
 }
 
-module.exports = { sendOtp };
+// --- deposit / withdrawal notifications --------------------------------------
+// kind: 'deposit-approved' | 'withdrawal-approved' | 'deposit-rejected' |
+//       'withdrawal-rejected'. info: { amount, method, address, binanceId, balance }
+async function sendWalletEmail(email, kind, info = {}) {
+  if (!transport && !BREVO_KEY) {
+    console.log(`[mail] (console) ${kind} to ${email}: $${info.amount}`);
+    return false;
+  }
+  const amt = `$${Number(info.amount || 0).toFixed(2)}`;
+  const approved = kind.endsWith('approved');
+  const isDeposit = kind.startsWith('deposit');
+  const color = approved ? '#0ecb81' : '#f6465d';
+  const method = (info.method || '').toUpperCase();
+  const dest = info.binanceId ? `Binance ID ${info.binanceId}` : info.address ? info.address : method;
+
+  let title, heading, lead, note;
+  if (kind === 'deposit-approved') {
+    title = `Your ${amt} deposit is confirmed`;
+    heading = 'Deposit confirmed ✅';
+    lead = `We've received and confirmed your deposit. <b style="color:#e7ecf5">${amt}</b> has been added to your live account.`;
+    note = info.balance != null ? `Your live balance is now <b style="color:#0ecb81">$${Number(info.balance).toFixed(2)}</b>.` : '';
+  } else if (kind === 'withdrawal-approved') {
+    title = `Your ${amt} withdrawal has been sent`;
+    heading = 'Withdrawal sent ✅';
+    lead = `Your withdrawal of <b style="color:#e7ecf5">${amt}</b> has been processed and sent${dest ? ` to <b style="color:#e7ecf5">${dest}</b>` : ''}.`;
+    note = 'Depending on the network, it may take a little time to appear in your wallet.';
+  } else if (kind === 'deposit-rejected') {
+    title = `About your ${amt} deposit`;
+    heading = 'Deposit not confirmed';
+    lead = `We were unable to confirm your deposit request of <b style="color:#e7ecf5">${amt}</b>.`;
+    note = `If you believe this is a mistake or your payment was sent, reply to this email or contact <a href="mailto:${SUPPORT}" style="color:#2f7cf6">${SUPPORT}</a>.`;
+  } else {
+    title = `About your ${amt} withdrawal`;
+    heading = 'Withdrawal not processed';
+    lead = `Your withdrawal request of <b style="color:#e7ecf5">${amt}</b> was not processed and the amount has been returned to your live balance.`;
+    note = `If you have questions, contact <a href="mailto:${SUPPORT}" style="color:#2f7cf6">${SUPPORT}</a>.`;
+  }
+
+  const text = `${heading}\n\n${lead.replace(/<[^>]+>/g, '')}\n${note.replace(/<[^>]+>/g, '')}${signatureText()}`;
+  const html = shell(`
+    <p style="margin:0 0 6px;font-size:16px;font-weight:700">${heading}</p>
+    <p style="margin:0 0 20px;color:#8493b3;font-size:13.5px;line-height:1.6">${lead}</p>
+    ${bigBox(`${isDeposit ? '⬇' : '⬆'} ${amt}${method ? ` &middot; ${method}` : ''}`, color)}
+    ${note ? `<p style="margin:20px 0 0;color:#8493b3;font-size:12.5px;line-height:1.6">${note}</p>` : ''}`);
+  await deliver(email, title, html, text);
+  return true;
+}
+
+module.exports = { sendOtp, sendWalletEmail };

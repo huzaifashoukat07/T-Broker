@@ -20,7 +20,7 @@ const { Market, TIMEFRAMES } = require('./market');
 const { LiveFeed } = require('./livefeed');
 const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
-const { sendOtp } = require('./mailer');
+const { sendOtp, sendWalletEmail } = require('./mailer');
 const { buildLeaderboard } = require('./leaderboard');
 
 const PORT = process.env.PORT || 3000;
@@ -313,6 +313,13 @@ app.post('/api/admin/requests/:txId/:action', auth, adminOnly, handle((req, res)
     });
   }
   store.save(user);
+
+  // Email the user (fire-and-forget so the admin action isn't blocked).
+  sendWalletEmail(user.email, `${tx.type}-${action === 'approve' ? 'approved' : 'rejected'}`, {
+    amount: tx.amount, method: tx.method, address: tx.address, binanceId: tx.binanceId,
+    balance: user.liveBalance,
+  }).catch((e) => console.error(`[mail] wallet email failed: ${e.message}`));
+
   res.json({ ok: true });
 }));
 
