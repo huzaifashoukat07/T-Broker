@@ -226,6 +226,9 @@ class Store {
         pass: pending.pass,
         demoBalance: DEMO_START_BALANCE,
         liveBalance: 0,
+        bonus: 0,            // outstanding non-withdrawable bonus credit
+        hasDeposited: false, // first-deposit gate for the promo bonus
+        promoUsed: false,
         trades: [],
         transactions: [],
         createdAt: Date.now(),
@@ -271,7 +274,7 @@ class Store {
   // --- Money ------------------------------------------------------------
 
   balances(user) {
-    return { demo: round2(user.demoBalance), live: round2(user.liveBalance) };
+    return { demo: round2(user.demoBalance), live: round2(user.liveBalance), bonus: round2(user.bonus || 0) };
   }
 
   adjust(user, account, delta) {
@@ -312,6 +315,7 @@ class Store {
       name: user.name,
       country: user.country || '🌐',
       balances: this.balances(user),
+      hasDeposited: !!user.hasDeposited,
       isAdmin: this.isAdmin(user),
       createdAt: user.createdAt,
     };

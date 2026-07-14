@@ -182,8 +182,8 @@ const MODAL_ROUTES = {
   '/wallet': () => showTransactions(),
   '/top': () => showLeaderboard(),
   '/help': () => openModal('#help-modal'),
-  '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); },
-  '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); },
+  '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); prepDeposit(); },
+  '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); prepWithdraw(); },
   '/admin': () => {
     if (!state.user?.isAdmin) return navigate('/trade', true);
     showAdmin();
@@ -257,6 +257,7 @@ async function boot() {
   state.durations = meta.durations;
   state.timeframes = meta.timeframes;
   state.wallets = meta.wallets || {};
+  state.promoPct = meta.promo?.pct || 100;
   state.durationIdx = Math.max(0, meta.durations.indexOf(60));
   state.asset = state.assets.find((a) => a.id === localStorage.getItem('tb_asset')) || state.assets[0];
   state.tf = Number(localStorage.getItem('tb_tf')) || meta.timeframes[0];
@@ -601,7 +602,7 @@ function renderBalances(balances) {
   $('#menu-live-amount').textContent = fmtMoney(balances.live);
   $('#check-demo').classList.toggle('hidden', state.account !== 'demo');
   $('#check-live').classList.toggle('hidden', state.account !== 'live');
-  $('#withdraw-avail').textContent = fmtMoney(balances.live);
+  $('#withdraw-avail').textContent = fmtMoney(Math.max(0, balances.live - (balances.bonus || 0)));
 }
 
 function fmtMoney(n) {
@@ -683,6 +684,34 @@ $('#deposit-quick').addEventListener('click', (e) => {
   if (amt) $('#deposit-amount').value = amt;
 });
 
+// When the deposit modal opens: show the promo input only for first-timers,
+// and a "being confirmed" banner if any deposit is still pending.
+async function prepDeposit() {
+  const firstTime = state.user && !state.user.hasDeposited;
+  $('#promo-field').classList.toggle('hidden', !firstTime);
+  if (firstTime && state.promoPct) $('#promo-hint').textContent = `— ${state.promoPct}% first-deposit bonus`;
+  $('#dep-banner').classList.add('hidden');
+  try {
+    const { transactions } = await api('/api/transactions');
+    const pend = transactions.filter((t) => t.type === 'deposit' && t.status === 'pending');
+    if (pend.length) {
+      const total = pend.reduce((s, t) => s + t.amount, 0);
+      $('#dep-banner-text').textContent = `Your deposit of ${fmtMoney(total)} is being confirmed — your balance updates once we verify the transfer.`;
+      $('#dep-banner').classList.remove('hidden');
+    }
+  } catch { /* ignore */ }
+}
+
+// When the withdraw modal opens: show available (excl. bonus) + bonus warning.
+function prepWithdraw() {
+  const bal = state.user?.balances || {};
+  const bonus = bal.bonus || 0;
+  const withdrawable = Math.max(0, (bal.live || 0) - bonus);
+  $('#withdraw-avail').textContent = fmtMoney(withdrawable);
+  $('#wd-bonus-warn').classList.toggle('hidden', bonus <= 0);
+  if (bonus > 0) $('#wd-bonus-amt').textContent = fmtMoney(bonus);
+}
+
 // Show a loading spinner until the QR image finishes loading (or fails over
 // to its fallbacks). If the image already loaded once, skip the spinner.
 function prepQr(imgId, spinId) {
@@ -757,11 +786,13 @@ $('#crypto-copy').addEventListener('click', async () => {
 
 async function submitDeposit() {
   const amount = Number($('#deposit-amount').value);
+  const promo = $('#deposit-promo').value.trim();
   try {
-    const data = await api('/api/deposit', { body: { amount, method: state.depositMethod } });
+    const data = await api('/api/deposit', { body: { amount, method: state.depositMethod, promo } });
     renderBalances(data.balances);
     dismissModals();
-    toast('', 'Deposit request received', `We're confirming your ${fmtMoney(amount)} transfer. Your balance will be credited after verification.`);
+    const bonusMsg = data.bonus ? ` A ${fmtMoney(data.bonus)} bonus will be added on approval.` : '';
+    toast('', 'Deposit request received', `We're confirming your ${fmtMoney(amount)} transfer. Your balance will be credited after verification.${bonusMsg}`);
   } catch (err) {
     toast('error', 'Deposit failed', err.message);
   }
@@ -804,7 +835,8 @@ $('#withdraw-confirm').addEventListener('click', async () => {
     const dest = method === 'binance' ? ` to Binance ID ${binanceId}`
       : method === 'usdt-trc20' ? ' to your USDT (TRC20) address'
       : ' to your USDT (BEP20) address';
-    toast('win', 'Withdrawal in progress', `${fmtMoney(amount)} is on its way${dest}. You'll receive it within 24–48 hours.`);
+    const forfeit = data.bonusForfeited ? ` Your ${fmtMoney(data.bonusForfeited)} bonus has been forfeited.` : '';
+    toast('win', 'Withdrawal in progress', `${fmtMoney(amount)} is on its way${dest}. You'll receive it within 24–48 hours.${forfeit}`);
   } catch (err) {
     toast('error', 'Withdrawal failed', err.message);
   }

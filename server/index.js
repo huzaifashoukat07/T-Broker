@@ -175,6 +175,7 @@ app.get('/api/assets', handle((req, res) => {
     wallets: Object.fromEntries(Object.entries(WALLETS).map(([net, w]) => [
       net, { ...w, qr: walletQr[net] || null },
     ])),
+    promo: { pct: PROMO_BONUS_PCT },
   });
 }));
 
@@ -238,24 +239,66 @@ app.get('/api/trades', auth, handle((req, res) => {
 // --- wallet ------------------------------------------------------------------
 
 const DEPOSIT_METHODS = ['binance', 'usdt-bep20', 'usdt-trc20']; // card & bank: coming soon
+const PROMO_CODE = (process.env.PROMO_CODE || 'WELCOME100').trim().toUpperCase();
+const PROMO_BONUS_PCT = Number(process.env.PROMO_BONUS_PCT) || 100; // 100% first-deposit bonus
+const PROMO_MAX_BONUS = Number(process.env.PROMO_MAX_BONUS) || 50000; // cap
+const WITHDRAWALS_PER_DAY = 2;
 
 // All deposits are real manual transfers (Binance Pay / USDT BEP20 / bank):
 // the money lands in the operator's wallet, so balances are NEVER credited
 // automatically — claiming to have paid must not mint balance. Requests are
 // logged as pending and the admin credits them from the admin panel.
+// A promo code grants a first-deposit bonus, applied when the admin approves.
 app.post('/api/deposit', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt < 10 || amt > 50000) throw new ApiError('Deposit must be between $10 and $50,000');
   const method = DEPOSIT_METHODS.includes(req.body?.method) ? req.body.method : 'binance';
-  store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'pending' });
+
+  let bonus = 0;
+  const promo = String(req.body?.promo || '').trim().toUpperCase();
+  if (promo) {
+    if (promo !== PROMO_CODE) throw new ApiError('Invalid promo code');
+    if (req.user.hasDeposited || req.user.promoUsed) {
+      throw new ApiError('This promo code can only be used on your first deposit');
+    }
+    bonus = Math.min(round2(amt * (PROMO_BONUS_PCT / 100)), PROMO_MAX_BONUS);
+    req.user.promoUsed = true; // lock so it can't be stacked before approval
+  }
+
+  store.addTransaction(req.user, {
+    type: 'deposit', amount: amt, method, status: 'pending',
+    ...(bonus ? { bonus, promo } : {}),
+  });
+  store.save(req.user);
   notifyAdmins();
-  res.json({ pending: true, balances: store.balances(req.user) });
+  res.json({ pending: true, bonus, balances: store.balances(req.user) });
 }));
 
 app.post('/api/withdraw', auth, handle((req, res) => {
   const amt = Math.round(Number(req.body?.amount) * 100) / 100;
   if (!Number.isFinite(amt) || amt <= 0) throw new ApiError('Enter a valid amount');
-  if (req.user.liveBalance < amt) throw new ApiError('Insufficient live balance');
+
+  // One pending withdrawal at a time.
+  if (req.user.transactions.some((t) => t.type === 'withdrawal' && t.status === 'pending')) {
+    throw new ApiError('You already have a withdrawal in progress. Please wait until it completes before requesting another.');
+  }
+  // At most 2 withdrawals per rolling 24 hours (pending + completed count).
+  const dayAgo = Date.now() - 24 * 3600 * 1000;
+  const recent = req.user.transactions.filter(
+    (t) => t.type === 'withdrawal' && t.status !== 'rejected' && t.time >= dayAgo,
+  ).length;
+  if (recent >= WITHDRAWALS_PER_DAY) {
+    throw new ApiError(`You can make at most ${WITHDRAWALS_PER_DAY} withdrawals per 24 hours. Please try again later.`);
+  }
+
+  const bonus = round2(req.user.bonus || 0);
+  const withdrawable = round2(req.user.liveBalance - bonus); // bonus itself can't be withdrawn
+  if (amt > withdrawable) {
+    throw new ApiError(bonus > 0
+      ? `You can withdraw up to $${withdrawable.toFixed(2)} (your $${bonus.toFixed(2)} bonus is not withdrawable)`
+      : 'Insufficient live balance');
+  }
+
   const method = DEPOSIT_METHODS.includes(req.body?.method) ? req.body.method : 'binance';
   const binanceId = String(req.body?.binanceId || '').trim();
   const address = String(req.body?.address || '').trim();
@@ -268,15 +311,21 @@ app.post('/api/withdraw', auth, handle((req, res) => {
   if (method === 'usdt-trc20' && !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) {
     throw new ApiError('Enter a valid TRC20 address (starts with T, 34 characters)');
   }
-  // Funds are held immediately; the payout is sent manually within 24–48h.
+
+  // Hold the withdrawal amount, and forfeit any remaining bonus on withdrawal.
   store.adjust(req.user, 'live', -amt);
+  if (bonus > 0) {
+    store.adjust(req.user, 'live', -bonus);
+    req.user.bonus = 0;
+  }
   store.addTransaction(req.user, {
     type: 'withdrawal', amount: amt, method, status: 'pending',
     ...(binanceId ? { binanceId } : {}),
     ...(address ? { address } : {}),
+    ...(bonus > 0 ? { bonusForfeited: bonus } : {}),
   });
   notifyAdmins();
-  res.json({ balances: store.balances(req.user), pending: true });
+  res.json({ balances: store.balances(req.user), pending: true, bonusForfeited: bonus });
 }));
 
 // --- admin: approve / reject deposit & withdrawal requests -------------------
@@ -319,18 +368,26 @@ app.post('/api/admin/requests/:txId/:action', auth, adminOnly, handle((req, res)
 
   if (action === 'approve') {
     tx.status = 'completed';
-    if (tx.type === 'deposit') store.adjust(user, 'live', tx.amount); // credit now
+    if (tx.type === 'deposit') {
+      store.adjust(user, 'live', tx.amount); // credit the deposit
+      if (tx.bonus) {                          // + first-deposit promo bonus
+        store.adjust(user, 'live', tx.bonus);
+        user.bonus = round2((user.bonus || 0) + tx.bonus);
+      }
+      user.hasDeposited = true;
+    }
     notifyUser(user.id, {
       type: 'wallet_update',
       balances: store.balances(user),
       kind: tx.type === 'deposit' ? 'win' : '',
       message: tx.type === 'deposit'
-        ? `Deposit approved — $${tx.amount.toFixed(2)} added to your live account`
+        ? `Deposit approved — $${tx.amount.toFixed(2)}${tx.bonus ? ` + $${tx.bonus.toFixed(2)} bonus` : ''} added to your live account`
         : `Withdrawal of $${tx.amount.toFixed(2)} has been sent`,
     });
   } else {
     tx.status = 'rejected';
     if (tx.type === 'withdrawal') store.adjust(user, 'live', tx.amount); // release held funds
+    if (tx.type === 'deposit' && tx.promo) user.promoUsed = false; // let them retry the promo
     notifyUser(user.id, {
       type: 'wallet_update',
       balances: store.balances(user),
