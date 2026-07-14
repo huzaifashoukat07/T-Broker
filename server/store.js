@@ -158,6 +158,21 @@ class Store {
     return this.createPending(email, { type: 'login', userId: user.id });
   }
 
+  // Password reset: emails an OTP; the new password is applied in verifyOtp.
+  // Returns null (no code) when the email has no account, so callers can give
+  // a generic "if it exists, we sent a code" reply without leaking accounts.
+  beginReset(email, newPassword) {
+    email = String(email || '').trim().toLowerCase();
+    if (!newPassword || String(newPassword).length < 6) throw new ApiError('Password must be at least 6 characters');
+    const user = this.findByEmail(email);
+    if (!user) return null;
+    return this.createPending(email, {
+      type: 'reset',
+      userId: user.id,
+      pass: this.hashPassword(String(newPassword)),
+    });
+  }
+
   createPending(email, data) {
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
     this.pendingAuth.set(email, {
@@ -221,6 +236,10 @@ class Store {
     }
     const user = this.users.get(pending.userId);
     if (!user) throw new ApiError('Account no longer exists');
+    if (pending.type === 'reset') {
+      user.pass = pending.pass;
+      this.save(user);
+    }
     return user;
   }
 

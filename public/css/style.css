@@ -77,6 +77,12 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .auth-note { margin-top: 18px; text-align: center; color: var(--muted); font-size: 12.5px; }
 .auth-note b { color: var(--up); }
 
+.forgot-link {
+  display: block; margin: -4px 0 4px auto; color: var(--accent);
+  font-size: 12.5px; font-weight: 600; padding: 2px 0;
+}
+.forgot-link:hover { text-decoration: underline; }
+
 /* OTP step */
 .otp-info { text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.6; margin-bottom: 16px; }
 .otp-info b { color: var(--text); }

@@ -51,16 +51,22 @@ $$('.auth-tab').forEach((btn) =>
     authMode = btn.dataset.tab;
     $$('.auth-tab').forEach((b) => b.classList.toggle('active', b === btn));
     $('#field-name').classList.toggle('hidden', authMode === 'login');
-    $('#auth-password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
+    const pw = $('#auth-password');
+    pw.previousElementSibling.textContent = 'Password';
+    pw.placeholder = '••••••••';
+    pw.autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
+    $('#forgot-link').classList.toggle('hidden', authMode !== 'login');
     setOtpStage(false);
   })
 );
+
+const SUBMIT_LABEL = { login: 'Log in', register: 'Create account', reset: 'Send reset code' };
 
 function setOtpStage(on, email, emailSent) {
   otpStage = on;
   $('#step-creds').classList.toggle('hidden', on);
   $('#step-otp').classList.toggle('hidden', !on);
-  $('#auth-submit').textContent = on ? 'Verify code' : authMode === 'login' ? 'Log in' : 'Create account';
+  $('#auth-submit').textContent = on ? (authMode === 'reset' ? 'Reset password' : 'Verify code') : SUBMIT_LABEL[authMode];
   $('#auth-error').classList.add('hidden');
   if (on) {
     otpEmail = email;
@@ -109,7 +115,8 @@ $('#auth-form').addEventListener('submit', async (e) => {
         password: $('#auth-password').value,
         name: $('#auth-name').value,
       };
-      const data = await api(authMode === 'login' ? '/api/login' : '/api/register', { body });
+      const path = authMode === 'login' ? '/api/login' : authMode === 'reset' ? '/api/forgot-password' : '/api/register';
+      const data = await api(path, { body });
       if (data.otpRequired) setOtpStage(true, data.email, data.emailSent);
     } else {
       const data = await api('/api/verify-otp', { body: { email: otpEmail, code: $('#auth-otp').value } });
@@ -127,6 +134,23 @@ $('#auth-form').addEventListener('submit', async (e) => {
 });
 
 $('#otp-back').addEventListener('click', () => setOtpStage(false));
+
+// "Forgot password?" — switch to reset mode: enter email + new password,
+// receive an OTP, then the code sets the new password and logs you in.
+function setAuthMode(mode) {
+  authMode = mode;
+  $$('.auth-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === (mode === 'reset' ? 'login' : mode)));
+  $('#field-name').classList.add('hidden');
+  const pw = $('#auth-password');
+  pw.previousElementSibling.textContent = mode === 'reset' ? 'New password' : 'Password';
+  pw.placeholder = mode === 'reset' ? 'Choose a new password' : '••••••••';
+  pw.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  $('#forgot-link').classList.toggle('hidden', mode !== 'login');
+  $('#auth-submit').textContent = SUBMIT_LABEL[mode];
+  $('#auth-error').classList.add('hidden');
+  setOtpStage(false);
+}
+$('#forgot-link').addEventListener('click', () => setAuthMode('reset'));
 
 $('#otp-resend').addEventListener('click', async () => {
   try {

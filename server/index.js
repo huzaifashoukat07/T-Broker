@@ -128,6 +128,18 @@ app.post('/api/verify-otp', handle((req, res) => {
   res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
 }));
 
+// Forgot password: sends an OTP; new password applied on verify-otp.
+// Always reports otpRequired so a missing account isn't revealed.
+app.post('/api/forgot-password', handle(async (req, res) => {
+  const { email, password } = req.body || {};
+  const pending = store.beginReset(email, password);
+  if (pending) {
+    await dispatchOtp(res, pending, 'password reset');
+  } else {
+    res.json({ otpRequired: true, email: String(email || '').trim().toLowerCase(), emailSent: true });
+  }
+}));
+
 app.post('/api/resend-otp', handle(async (req, res) => {
   const pending = store.resendOtp(req.body?.email);
   await dispatchOtp(res, pending, 'verification');
