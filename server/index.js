@@ -140,6 +140,7 @@ app.post('/api/verify-otp', handle((req, res) => {
   const { email, code } = req.body || {};
   const user = store.verifyOtp(email, code);
   recordGeo(user, req); // set country from IP for new signups and existing users
+  notifyAdmins(); // new signup / login → refresh the admin users list live
   res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
 }));
 
@@ -247,6 +248,7 @@ app.post('/api/deposit', auth, handle((req, res) => {
   if (!Number.isFinite(amt) || amt < 10 || amt > 50000) throw new ApiError('Deposit must be between $10 and $50,000');
   const method = DEPOSIT_METHODS.includes(req.body?.method) ? req.body.method : 'binance';
   store.addTransaction(req.user, { type: 'deposit', amount: amt, method, status: 'pending' });
+  notifyAdmins();
   res.json({ pending: true, balances: store.balances(req.user) });
 }));
 
@@ -273,6 +275,7 @@ app.post('/api/withdraw', auth, handle((req, res) => {
     ...(binanceId ? { binanceId } : {}),
     ...(address ? { address } : {}),
   });
+  notifyAdmins();
   res.json({ balances: store.balances(req.user), pending: true });
 }));
 
@@ -282,6 +285,15 @@ function adminOnly(req, res, next) {
   if (!store.isAdmin(req.user)) return res.status(403).json({ error: 'Admins only' });
   next();
 }
+
+// Lightweight counts for both tab badges (so both are correct on open).
+app.get('/api/admin/summary', auth, adminOnly, handle((req, res) => {
+  let pending = 0;
+  for (const u of store.users.values()) {
+    for (const tx of u.transactions) if (tx.status === 'pending') pending++;
+  }
+  res.json({ requests: pending, users: store.users.size });
+}));
 
 app.get('/api/admin/requests', auth, adminOnly, handle((req, res) => {
   const requests = [];
@@ -334,6 +346,7 @@ app.post('/api/admin/requests/:txId/:action', auth, adminOnly, handle((req, res)
     balance: user.liveBalance,
   }).catch((e) => console.error(`[mail] wallet email failed: ${e.message}`));
 
+  notifyAdmins();
   res.json({ ok: true });
 }));
 
@@ -440,6 +453,16 @@ function notifyUser(userId, msg) {
 function broadcastAll(msg) {
   const raw = JSON.stringify(msg);
   for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(raw);
+}
+
+// Push a live refresh to any connected admins (used by the admin panel).
+function notifyAdmins() {
+  const raw = JSON.stringify({ type: 'admin_refresh' });
+  for (const [ws, meta] of sockets) {
+    if (ws.readyState !== ws.OPEN || !meta.userId) continue;
+    const u = store.get(meta.userId);
+    if (u && store.isAdmin(u)) ws.send(raw);
+  }
 }
 
 // Broadcast ticks to everyone; settle expired trades on each tick.

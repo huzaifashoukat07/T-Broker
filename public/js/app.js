@@ -309,6 +309,7 @@ function connectWS() {
       renderBalances(msg.balances);
       toast(msg.kind || '', 'Wallet update', msg.message);
     }
+    else if (msg.type === 'admin_refresh') refreshAdminLive();
   };
   ws.onclose = () => setTimeout(() => { if (!document.hidden) connectWS(); }, 1500);
 }
@@ -652,6 +653,7 @@ function openModal(id) {
 }
 function closeModals() {
   $('#modal-overlay').classList.add('hidden');
+  state.adminOpen = false;
 }
 $('#modal-overlay').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) dismissModals();
@@ -811,14 +813,34 @@ $('#withdraw-confirm').addEventListener('click', async () => {
 // ---------------------------------------------------------------- admin panel
 
 let adminTab = 'requests';
+state.adminOpen = false;
+
+// Refresh both tab badges regardless of which tab is showing.
+async function updateAdminBadges() {
+  try {
+    const { requests, users } = await api('/api/admin/summary');
+    $('#admin-req-count').textContent = requests;
+    $('#admin-user-count').textContent = users;
+  } catch { /* ignore */ }
+}
 
 async function showAdmin() {
   openModal('#admin-modal');
+  state.adminOpen = true;
   $$('.admin-tab').forEach((t) => t.classList.toggle('active', t.dataset.atab === adminTab));
   $('#admin-pane-requests').classList.toggle('hidden', adminTab !== 'requests');
   $('#admin-pane-users').classList.toggle('hidden', adminTab !== 'users');
+  updateAdminBadges(); // both badges correct immediately, not just the open tab
   if (adminTab === 'requests') await loadAdminRequests();
   else await loadAdminUsers();
+}
+
+// Live refresh pushed from the server when requests/users change.
+function refreshAdminLive() {
+  if (!state.adminOpen) return;
+  updateAdminBadges();
+  if (adminTab === 'requests') loadAdminRequests();
+  else loadAdminUsers();
 }
 
 $$('.admin-tab').forEach((t) => t.addEventListener('click', () => {
