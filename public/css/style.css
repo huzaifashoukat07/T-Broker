@@ -369,6 +369,22 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .lb-row:nth-child(3) .lb-rank { color: #d98e4a; }
 .lb-name { flex: 1; font-weight: 600; }
 .lb-profit { color: var(--up); font-weight: 800; font-variant-numeric: tabular-nums; }
+.lb-row.lb-you { background: rgba(47,124,246,.16); border: 1px solid var(--accent); }
+.lb-row.lb-you .lb-name { color: var(--accent); }
+.lb-you-footer { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.lb-hint { color: var(--muted); font-size: 12px; margin-top: 8px; text-align: center; line-height: 1.5; }
+.lb-hint b { color: var(--up); }
+
+/* Today's P&L */
+.pnl-today {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px;
+}
+.pnl-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.pnl-acct { background: rgba(14,203,129,.15); color: var(--up); padding: 1px 6px; border-radius: 5px; font-size: 9.5px; margin-left: 4px; }
+.pnl-value { font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }
+.pnl-value.up { color: var(--up); }
+.pnl-value.down { color: var(--down); }
 
 .tx-list { display: flex; flex-direction: column; gap: 6px; }
 .tx-row {

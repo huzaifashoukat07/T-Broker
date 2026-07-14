@@ -351,6 +351,8 @@ function onTradeSettled(msg) {
   renderBalances(msg.balances);
   renderTrades();
   syncChartTrades();
+  if (msg.pnlToday != null) renderPnl(msg.pnlToday);
+  else renderPnl();
   const t = msg.trade;
   if (t.status === 'won') {
     toast('win', `You won $${(t.amount + t.profit).toFixed(2)}!`, `${t.assetName} · ${t.direction.toUpperCase()} · +$${t.profit.toFixed(2)} profit`);
@@ -519,6 +521,24 @@ async function loadTrades() {
   state.trades = trades;
   renderTrades();
   syncChartTrades();
+  renderPnl();
+}
+
+// Today's realised P&L on the LIVE account (won +profit, lost −amount).
+function computePnlToday() {
+  const midnight = new Date().setHours(0, 0, 0, 0);
+  return state.trades
+    .filter((t) => t.account === 'live' && t.openedAt >= midnight && t.profit != null)
+    .reduce((s, t) => s + t.profit, 0);
+}
+
+function renderPnl(value) {
+  const pnl = value != null ? value : computePnlToday();
+  const el = $('#pnl-value');
+  if (!el) return;
+  const sign = pnl > 0 ? '+' : pnl < 0 ? '−' : '';
+  el.textContent = `${sign}${fmtMoney(Math.abs(pnl))}`;
+  el.className = 'pnl-value ' + (pnl > 0 ? 'up' : pnl < 0 ? 'down' : '');
 }
 
 $$('.trades-tab').forEach((btn) =>
@@ -927,16 +947,34 @@ $('#menu-admin-btn').addEventListener('click', () => { $('#user-menu').classList
 
 async function showLeaderboard() {
   openModal('#top-modal');
-  const { leaderboard } = await api('/api/leaderboard');
-  $('#leaderboard').innerHTML = leaderboard
-    .map((r, i) => `
-      <div class="lb-row">
-        <span class="lb-rank">${i + 1}</span>
-        <span>${r.country}</span>
-        <span class="lb-name">${escapeHtml(r.name)}</span>
-        <span class="lb-profit">+${fmtMoney(r.profit)}</span>
-      </div>`)
-    .join('');
+  const wrap = $('#leaderboard');
+  wrap.innerHTML = '<div class="trades-empty">Loading…</div>';
+  const { leaderboard, you } = await api('/api/leaderboard');
+  const rows = leaderboard.map((r) => `
+    <div class="lb-row${r.isYou ? ' lb-you' : ''}">
+      <span class="lb-rank">${r.rank}</span>
+      <span>${r.country}</span>
+      <span class="lb-name">${escapeHtml(r.name)}</span>
+      <span class="lb-profit">+${fmtMoney(r.profit)}</span>
+    </div>`).join('');
+
+  // Your own standing when you profited today but aren't in the top 15
+  let youRow = '';
+  if (you && !you.inTop && you.profit > 0) {
+    youRow = `
+      <div class="lb-you-footer">
+        <div class="lb-row lb-you">
+          <span class="lb-rank">${you.label}</span>
+          <span>🏆</span>
+          <span class="lb-name">You</span>
+          <span class="lb-profit">+${fmtMoney(you.profit)}</span>
+        </div>
+        <p class="lb-hint">Keep winning on your live account to climb into the Top 15.</p>
+      </div>`;
+  } else if (you && you.profit <= 0) {
+    youRow = `<p class="lb-hint" style="margin-top:10px">Win trades on your <b>live</b> account today to appear on the board.</p>`;
+  }
+  wrap.innerHTML = rows + youRow;
 }
 $('#rail-top').addEventListener('click', () => navigate('/top'));
 $('#menu-top-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/top'); });

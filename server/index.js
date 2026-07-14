@@ -21,6 +21,7 @@ const { LiveFeed } = require('./livefeed');
 const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
 const { sendOtp } = require('./mailer');
+const { buildLeaderboard } = require('./leaderboard');
 
 const PORT = process.env.PORT || 3000;
 const MIN_TRADE = 1;
@@ -372,27 +373,22 @@ app.get('/api/transactions', auth, handle((req, res) => {
 
 // --- leaderboard ---------------------------------------------------------------
 
-const BOT_TRADERS = [
-  'Viktor S.', 'Amara O.', 'Kenji T.', 'Lucia M.', 'Omar H.', 'Priya R.',
-  'Mateo G.', 'Zanele K.', 'Ethan W.', 'Yulia P.', 'Rafael C.', 'Mei L.',
-];
-const botScores = BOT_TRADERS.map((name, i) => ({
-  name,
-  profit: Math.round((15000 / (i + 1) + Math.random() * 2000) * 100) / 100,
-  country: ['🇩🇪', '🇳🇬', '🇯🇵', '🇪🇸', '🇦🇪', '🇮🇳', '🇦🇷', '🇿🇦', '🇺🇸', '🇺🇦', '🇧🇷', '🇨🇳'][i],
-}));
-
-app.get('/api/leaderboard', handle((req, res) => {
+// Sum of a user's settled LIVE trade P&L since local midnight (won: +profit,
+// lost: -amount, draw: 0). Used for both the leaderboard and today's P&L.
+function todayLivePnl(user) {
   const today = new Date().setHours(0, 0, 0, 0);
-  const real = [...store.users.values()].map((u) => ({
-    name: u.name,
-    country: '🌐',
-    profit: round2(u.trades
-      .filter((t) => t.status === 'won' && t.openedAt >= today)
-      .reduce((s, t) => s + t.profit, 0)),
-  })).filter((r) => r.profit > 0);
-  const board = [...botScores, ...real].sort((a, b) => b.profit - a.profit).slice(0, 20);
-  res.json({ leaderboard: board });
+  return round2(user.trades
+    .filter((t) => t.account === 'live' && t.openedAt >= today && t.profit != null)
+    .reduce((s, t) => s + t.profit, 0));
+}
+
+// Optional auth: a logged-in user is ranked; real users are never listed.
+app.get('/api/leaderboard', handle((req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const user = store.verifyToken(token);
+  const profit = user ? todayLivePnl(user) : 0;
+  res.json(buildLeaderboard(Date.now(), user ? user.name : null, profit));
 }));
 
 function round2(n) { return Math.round(n * 100) / 100; }
@@ -455,7 +451,7 @@ function settleExpired() {
       trade.profit = -trade.amount;
     }
     store.save(user);
-    notifyUser(userId, { type: 'trade_settled', trade, balances: store.balances(user) });
+    notifyUser(userId, { type: 'trade_settled', trade, balances: store.balances(user), pnlToday: todayLivePnl(user) });
   }
 }
 
