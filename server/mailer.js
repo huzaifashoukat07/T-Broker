@@ -15,9 +15,14 @@ if (process.env.SMTP_HOST) {
     host: process.env.SMTP_HOST,
     port,
     secure: port === 465, // 465 = implicit TLS; 587 uses STARTTLS
+    requireTLS: port !== 465, // enforce STARTTLS on 587
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
       : undefined,
+    // fail fast instead of hanging forever if a port is blocked
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 20000,
   });
   console.log(`[mail] SMTP configured: ${process.env.SMTP_HOST}:${port} — verifying…`);
   // Verify credentials at startup so problems surface immediately instead of
