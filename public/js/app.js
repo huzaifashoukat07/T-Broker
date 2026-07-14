@@ -786,12 +786,28 @@ $('#withdraw-confirm').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- admin panel
 
+let adminTab = 'requests';
+
 async function showAdmin() {
   openModal('#admin-modal');
+  $$('.admin-tab').forEach((t) => t.classList.toggle('active', t.dataset.atab === adminTab));
+  $('#admin-pane-requests').classList.toggle('hidden', adminTab !== 'requests');
+  $('#admin-pane-users').classList.toggle('hidden', adminTab !== 'users');
+  if (adminTab === 'requests') await loadAdminRequests();
+  else await loadAdminUsers();
+}
+
+$$('.admin-tab').forEach((t) => t.addEventListener('click', () => {
+  adminTab = t.dataset.atab;
+  showAdmin();
+}));
+
+async function loadAdminRequests() {
   const wrap = $('#admin-list');
   wrap.innerHTML = '<div class="trades-empty">Loading…</div>';
   try {
     const { requests } = await api('/api/admin/requests');
+    $('#admin-req-count').textContent = requests.length;
     wrap.innerHTML = requests.length
       ? requests.map((r) => `
         <div class="admin-row">
@@ -822,6 +838,63 @@ $('#admin-list').addEventListener('click', async (e) => {
     showAdmin();
   } catch (err) {
     toast('error', 'Action failed', err.message);
+    btn.disabled = false;
+  }
+});
+
+// --- admin: users list -------------------------------------------------------
+
+async function loadAdminUsers() {
+  const wrap = $('#admin-users-list');
+  const q = $('#admin-user-search').value.trim();
+  wrap.innerHTML = '<div class="trades-empty">Loading…</div>';
+  try {
+    const { users, count } = await api(`/api/admin/users?q=${encodeURIComponent(q)}`);
+    $('#admin-user-count').textContent = count;
+    wrap.innerHTML = users.length
+      ? users.map((u) => `
+        <div class="admin-row user-row">
+          <div class="ar-mid">
+            <div class="ar-user">${escapeHtml(u.name)} ${u.isAdmin ? '<span class="tx-badge" style="background:rgba(47,124,246,.18);color:#6ea8ff">admin</span>' : ''}</div>
+            <div class="ar-sub">${escapeHtml(u.email)} · joined ${new Date(u.createdAt).toLocaleDateString()}</div>
+            <div class="ar-stats">${u.trades} trades · ${u.wins}W/${u.losses}L · deposited ${fmtMoney(u.deposited)}${u.pending ? ' · <b style="color:#f7b32b">' + u.pending + ' pending</b>' : ''}</div>
+          </div>
+          <div class="ar-bal">
+            <div><span class="bl-label">LIVE</span> <b>${fmtMoney(u.live)}</b></div>
+            <div><span class="bl-label">DEMO</span> ${fmtMoney(u.demo)}</div>
+          </div>
+          <div class="ar-actions">
+            <button class="ar-approve" data-adjust="${u.id}" data-acc="live" data-dir="1" title="Credit live balance">+ Credit</button>
+            <button class="ar-reject" data-adjust="${u.id}" data-acc="live" data-dir="-1" title="Debit live balance">− Debit</button>
+          </div>
+        </div>`).join('')
+      : '<div class="trades-empty">No accounts found.</div>';
+  } catch (err) {
+    wrap.innerHTML = `<div class="trades-empty">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+let userSearchTimer;
+$('#admin-user-search').addEventListener('input', () => {
+  clearTimeout(userSearchTimer);
+  userSearchTimer = setTimeout(loadAdminUsers, 250);
+});
+
+$('#admin-users-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-adjust]');
+  if (!btn) return;
+  const dir = Number(btn.dataset.dir);
+  const input = prompt(`Amount to ${dir > 0 ? 'CREDIT to' : 'DEBIT from'} this user's LIVE balance (USD):`, '100');
+  if (input === null) return;
+  const amt = Number(input);
+  if (!Number.isFinite(amt) || amt <= 0) return toast('error', 'Invalid amount', 'Enter a positive number.');
+  btn.disabled = true;
+  try {
+    await api(`/api/admin/users/${btn.dataset.adjust}/adjust`, { method: 'POST', body: { account: btn.dataset.acc, delta: dir * amt } });
+    toast('win', 'Balance updated', `${dir > 0 ? 'Credited' : 'Debited'} ${fmtMoney(amt)}.`);
+    loadAdminUsers();
+  } catch (err) {
+    toast('error', 'Failed', err.message);
     btn.disabled = false;
   }
 });
