@@ -598,18 +598,19 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   .btn-deposit { padding: 9px 13px; font-size: 12px; }
   .avatar { width: 32px; height: 32px; font-size: 13px; }
 
-  /* stack: chart on top, trade controls docked below */
+  /* stack: chart on top, trade controls docked below. The chart is capped
+     so the panel (incl. Up/Down) always sits above the phone nav bar. */
   .body { flex-direction: column; }
-  .chart-area { flex: 1; min-height: 0; }
+  .chart-area { flex: none; height: 46dvh; min-height: 200px; }
   .chart-head { padding: 8px 10px 4px; }
   .tf-btn { padding: 5px 9px; font-size: 11px; }
   .chart-price { font-size: 15px; }
 
   .panel {
-    width: 100%; flex: none; border-left: none; border-top: 1px solid var(--border);
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-    overflow: visible;
+    width: 100%; flex: 1 1 auto; border-left: none; border-top: 1px solid var(--border);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start;
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+    overflow-y: auto; /* safety: scroll if a short screen can't fit everything */
   }
   .panel-asset { grid-column: 1 / -1; }
   .pa-name { font-size: 14px; }
