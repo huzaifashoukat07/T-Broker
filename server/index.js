@@ -22,6 +22,7 @@ const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
 const { sendOtp, sendWalletEmail } = require('./mailer');
 const { buildLeaderboard } = require('./leaderboard');
+const { lookupCountry } = require('./geo');
 
 const PORT = process.env.PORT || 3000;
 const MIN_TRADE = 1;
@@ -58,7 +59,19 @@ const walletQr = {};
 const market = new Market();
 const store = new Store();
 const app = express();
+app.set('trust proxy', true); // Render/proxies set X-Forwarded-For; read the real client IP
 app.use(express.json());
+
+const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '';
+
+// Record a user's country (and last IP) from their request, once known.
+function recordGeo(user, req) {
+  user.lastIp = clientIp(req);
+  if (user.country && user.country !== '🌐') return; // already resolved
+  lookupCountry(user.lastIp).then(({ code, flag }) => {
+    if (flag && flag !== '🌐') { user.country = flag; user.countryCode = code; store.save(user); }
+  }).catch(() => {});
+}
 // no-cache: browsers revalidate every file (cheap 304s), so users always get
 // the current frontend after the server is updated
 app.use(express.static(path.join(__dirname, '..', 'public'), {
@@ -126,6 +139,7 @@ app.post('/api/login', handle(async (req, res) => {
 app.post('/api/verify-otp', handle((req, res) => {
   const { email, code } = req.body || {};
   const user = store.verifyOtp(email, code);
+  recordGeo(user, req); // set country from IP for new signups and existing users
   res.json({ token: store.issueToken(user.id), user: store.publicUser(user) });
 }));
 
@@ -339,6 +353,7 @@ app.get('/api/admin/users', auth, adminOnly, handle((req, res) => {
         .reduce((s, t) => s + t.amount, 0);
       return {
         id: u.id, name: u.name, email: u.email, createdAt: u.createdAt,
+        country: u.country || '🌐', countryCode: u.countryCode || '', lastIp: u.lastIp || '',
         demo: round2(u.demoBalance), live: round2(u.liveBalance),
         trades: u.trades.length, wins, losses, pending, deposited: round2(deposited),
         isAdmin: store.isAdmin(u),
@@ -395,7 +410,7 @@ app.get('/api/leaderboard', handle((req, res) => {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   const user = store.verifyToken(token);
   const profit = user ? todayLivePnl(user) : 0;
-  res.json(buildLeaderboard(Date.now(), user ? user.name : null, profit));
+  res.json(buildLeaderboard(Date.now(), user ? user.name : null, profit, user ? user.country : null));
 }));
 
 function round2(n) { return Math.round(n * 100) / 100; }

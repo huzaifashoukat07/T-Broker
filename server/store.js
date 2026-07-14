@@ -310,6 +310,7 @@ class Store {
       id: user.id,
       email: user.email,
       name: user.name,
+      country: user.country || '🌐',
       balances: this.balances(user),
       isAdmin: this.isAdmin(user),
       createdAt: user.createdAt,

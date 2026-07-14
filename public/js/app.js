@@ -879,8 +879,8 @@ async function loadAdminUsers() {
       ? users.map((u) => `
         <div class="admin-row user-row">
           <div class="ar-mid">
-            <div class="ar-user">${escapeHtml(u.name)} ${u.isAdmin ? '<span class="tx-badge" style="background:rgba(47,124,246,.18);color:#6ea8ff">admin</span>' : ''}</div>
-            <div class="ar-sub">${escapeHtml(u.email)} · joined ${new Date(u.createdAt).toLocaleDateString()}</div>
+            <div class="ar-user">${u.country || '🌐'} ${escapeHtml(u.name)} ${u.isAdmin ? '<span class="tx-badge" style="background:rgba(47,124,246,.18);color:#6ea8ff">admin</span>' : ''}</div>
+            <div class="ar-sub">${escapeHtml(u.email)} · joined ${new Date(u.createdAt).toLocaleDateString()}${u.countryCode ? ' · ' + escapeHtml(u.countryCode) : ''}${u.lastIp ? ' · ' + escapeHtml(u.lastIp) : ''}</div>
             <div class="ar-stats">${u.trades} trades · ${u.wins}W/${u.losses}L · deposited ${fmtMoney(u.deposited)}${u.pending ? ' · <b style="color:#f7b32b">' + u.pending + ' pending</b>' : ''}</div>
           </div>
           <div class="ar-bal">
@@ -934,6 +934,7 @@ async function showLeaderboard() {
   // Your standing box (top of the leaderboard, Quotex-style)
   const name = state.user?.name || 'You';
   $('#lb-me-av').textContent = name[0].toUpperCase();
+  $('#lb-me-flag').textContent = (you && you.flag) || state.user?.country || '🌐';
   $('#lb-me-name').textContent = name;
   const pnl = you ? you.profit : 0;
   const pnlEl = $('#lb-me-pnl');

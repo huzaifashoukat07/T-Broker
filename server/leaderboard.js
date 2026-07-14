@@ -46,7 +46,8 @@ function dayProfits(dayIndex) {
 }
 
 // now: ms timestamp. userName/userProfitToday: null when not logged in.
-function buildLeaderboard(now, userName, userProfitToday) {
+function buildLeaderboard(now, userName, userProfitToday, userFlag) {
+  const flag = userFlag || '🌐';
   const dayIndex = Math.floor(now / DAY_MS);
   const profits = dayProfits(dayIndex);
   const win = dayIndex % 10;                 // which 15 names are featured today
@@ -59,16 +60,16 @@ function buildLeaderboard(now, userName, userProfitToday) {
   if (userName != null) {
     const rank = profits.filter((p) => p > up).length + 1; // rank among the 150 pool
     if (up <= 0) {
-      you = { inTop: false, rank: null, profit: up, label: '—' };
+      you = { inTop: false, rank: null, profit: up, label: '—', flag };
     } else if (up > threshold) {
-      list.push({ name: `${userName} (You)`, country: '🏆', profit: up, isYou: true });
+      list.push({ name: `${userName} (You)`, country: flag, profit: up, isYou: true });
       list.sort((a, b) => b.profit - a.profit);
       list = list.slice(0, 15);
       const r = list.findIndex((e) => e.isYou) + 1;
-      you = { inTop: true, rank: r, profit: up, label: `#${r}` };
+      you = { inTop: true, rank: r, profit: up, label: `#${r}`, flag };
     } else {
       const label = rank > 100 ? '100+' : rank > 50 ? '50+' : rank > 15 ? '15+' : `#${rank}`;
-      you = { inTop: false, rank, profit: up, label };
+      you = { inTop: false, rank, profit: up, label, flag };
     }
   }
 
