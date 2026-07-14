@@ -1,15 +1,24 @@
-// Email delivery for OTP verification codes.
-// Configure SMTP via environment variables:
-//   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
-// (e.g. Gmail: SMTP_HOST=smtp.gmail.com SMTP_PORT=465 SMTP_USER=you@gmail.com
-//  SMTP_PASS=<app password>)
-// Without SMTP configured the server runs in dev mode: codes are printed to
-// the console instead of being emailed.
+// Email delivery for OTP verification codes. Two transports:
+//
+//  1. Brevo HTTP API (recommended on hosts that block SMTP ports, e.g.
+//     Render): set BREVO_API_KEY. Sends over HTTPS (port 443).
+//  2. SMTP via nodemailer: set SMTP_HOST/PORT/USER/PASS.
+//
+// Without either, the server runs in dev mode and prints codes to the console.
+// Sender identity: SMTP_FROM / SUPPORT_EMAIL / BRAND_NAME / SITE_URL.
 
 const nodemailer = require('nodemailer');
+const https = require('https');
+
+let HttpsProxyAgent = null;
+try { ({ HttpsProxyAgent } = require('https-proxy-agent')); } catch { /* optional */ }
+const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || null;
+const httpsAgent = proxyUrl && HttpsProxyAgent ? new HttpsProxyAgent(proxyUrl) : undefined;
+
+const BREVO_KEY = process.env.BREVO_API_KEY || '';
 
 let transport = null;
-if (process.env.SMTP_HOST) {
+if (!BREVO_KEY && process.env.SMTP_HOST) {
   const port = Number(process.env.SMTP_PORT) || 587;
   transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -30,8 +39,10 @@ if (process.env.SMTP_HOST) {
   transport.verify()
     .then(() => console.log('[mail] SMTP connection OK — OTP codes will be emailed'))
     .catch((e) => console.error(`[mail] SMTP verify FAILED (${e.message}) — check SMTP_USER/SMTP_PASS. Emails will fail; codes still print to console`));
+} else if (BREVO_KEY) {
+  console.log('[mail] Brevo HTTP API enabled — OTP codes will be emailed over HTTPS');
 } else {
-  console.log('[mail] SMTP not configured — verification codes will be printed to this console (set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS to send real emails)');
+  console.log('[mail] Email not configured — verification codes will be printed to this console (set BREVO_API_KEY, or SMTP_HOST/PORT/USER/PASS)');
 }
 
 const BRAND = process.env.BRAND_NAME || 'NovaTrade';
@@ -39,19 +50,50 @@ const SITE = process.env.SITE_URL || 'https://nova-market.trade';
 const SUPPORT = process.env.SUPPORT_EMAIL || process.env.SMTP_USER || 'info@nova-market.trade';
 const FROM = process.env.SMTP_FROM || `${BRAND} <${SUPPORT}>`;
 
+// Parse "Name <email>" into parts for the Brevo API.
+function parseFrom(from) {
+  const m = String(from).match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  return m ? { name: m[1] || BRAND, email: m[2] } : { name: BRAND, email: String(from) };
+}
+
+// POST the email through Brevo's transactional API over HTTPS (port 443).
+function sendViaBrevo(to, subject, html, text) {
+  const sender = parseFrom(FROM);
+  const payload = JSON.stringify({
+    sender,
+    to: [{ email: to }],
+    replyTo: { email: SUPPORT, name: BRAND },
+    subject, htmlContent: html, textContent: text,
+  });
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
+      agent: httpsAgent, timeout: 15000,
+      headers: { 'api-key': BREVO_KEY, 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve();
+        else reject(new Error(`Brevo HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('request timeout')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 // Returns true if the email was actually sent, false in dev/console mode.
 async function sendOtp(email, code, purpose) {
-  if (!transport) {
+  if (!transport && !BREVO_KEY) {
     console.log(`[mail] ${purpose} code for ${email}: ${code}`);
     return false;
   }
   const year = new Date().getFullYear();
-  await transport.sendMail({
-    from: FROM,
-    to: email,
-    subject: `${code} is your ${BRAND} verification code`,
-    replyTo: SUPPORT,
-    text:
+  const subject = `${code} is your ${BRAND} verification code`;
+  const text =
 `Your ${BRAND} ${purpose} code is: ${code}
 
 This code expires in 5 minutes. Never share it with anyone — our team will never ask you for it.
@@ -63,8 +105,8 @@ ${SITE}
 Support: ${SUPPORT}
 
 © ${year} ${BRAND}. All rights reserved.
-This is an automated message, please do not reply.`,
-    html: `
+This is an automated message, please do not reply.`;
+  const html = `
   <div style="margin:0;padding:24px 12px;background:#070a12;font-family:'Segoe UI',Arial,Helvetica,sans-serif">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px;margin:0 auto">
       <tr><td style="background:#0b0f19;border:1px solid #232f4e;border-radius:16px;overflow:hidden">
@@ -99,8 +141,13 @@ This is an automated message, please do not reply.`,
 
       </td></tr>
     </table>
-  </div>`,
-  });
+  </div>`;
+
+  if (BREVO_KEY) {
+    await sendViaBrevo(email, subject, html, text);
+  } else {
+    await transport.sendMail({ from: FROM, to: email, subject, replyTo: SUPPORT, text, html });
+  }
   return true;
 }
 
