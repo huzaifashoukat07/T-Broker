@@ -155,6 +155,9 @@ class Store {
     if (!user || !this.verifyPassword(String(password || ''), user.pass)) {
       throw new ApiError('Incorrect email or password');
     }
+    if (user.blocked) {
+      throw new ApiError('This account has been blocked for violating our terms of service. Contact support if you believe this is a mistake.', 403);
+    }
     return this.createPending(email, { type: 'login', userId: user.id });
   }
 

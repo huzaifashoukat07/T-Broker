@@ -311,6 +311,10 @@ function connectWS() {
       toast(msg.kind || '', 'Wallet update', msg.message);
     }
     else if (msg.type === 'admin_refresh') refreshAdminLive();
+    else if (msg.type === 'account_blocked') {
+      toast('error', 'Account blocked', msg.message);
+      setTimeout(logout, 2500);
+    }
   };
   ws.onclose = () => setTimeout(() => { if (!document.hidden) connectWS(); }, 1500);
 }
@@ -933,7 +937,7 @@ async function loadAdminUsers() {
       ? users.map((u) => `
         <div class="admin-row user-row">
           <div class="ar-mid">
-            <div class="ar-user">${u.country || '🌐'} ${escapeHtml(u.name)} ${u.isAdmin ? '<span class="tx-badge" style="background:rgba(47,124,246,.18);color:#6ea8ff">admin</span>' : ''}</div>
+            <div class="ar-user">${u.country || '🌐'} ${escapeHtml(u.name)} ${u.isAdmin ? '<span class="tx-badge" style="background:rgba(47,124,246,.18);color:#6ea8ff">admin</span>' : ''}${u.blocked ? '<span class="tx-badge" style="background:rgba(246,70,93,.18);color:#f6465d">blocked</span>' : ''}</div>
             <div class="ar-sub">${escapeHtml(u.email)} · joined ${new Date(u.createdAt).toLocaleDateString()}${u.countryCode ? ' · ' + escapeHtml(u.countryCode) : ''}${u.lastIp ? ' · ' + escapeHtml(u.lastIp) : ''}</div>
             <div class="ar-stats">${u.trades} trades · ${u.wins}W/${u.losses}L · deposited ${fmtMoney(u.deposited)}${u.pending ? ' · <b style="color:#f7b32b">' + u.pending + ' pending</b>' : ''}</div>
           </div>
@@ -944,6 +948,7 @@ async function loadAdminUsers() {
           <div class="ar-actions">
             <button class="ar-approve" data-adjust="${u.id}" data-acc="live" data-dir="1" title="Credit live balance">+ Credit</button>
             <button class="ar-reject" data-adjust="${u.id}" data-acc="live" data-dir="-1" title="Debit live balance">− Debit</button>
+            ${u.isAdmin ? '' : `<button class="${u.blocked ? 'ar-approve' : 'ar-reject'}" data-block="${u.id}" data-to="${u.blocked ? 0 : 1}" title="${u.blocked ? 'Restore access' : 'Lock this account out'}">${u.blocked ? 'Unblock' : 'Block'}</button>`}
           </div>
         </div>`).join('')
       : '<div class="trades-empty">No accounts found.</div>';
@@ -959,6 +964,21 @@ $('#admin-user-search').addEventListener('input', () => {
 });
 
 $('#admin-users-list').addEventListener('click', async (e) => {
+  const blockBtn = e.target.closest('[data-block]');
+  if (blockBtn) {
+    const blocking = blockBtn.dataset.to === '1';
+    if (blocking && !confirm('Block this account? The user will be locked out immediately and cannot log in until unblocked.')) return;
+    blockBtn.disabled = true;
+    try {
+      await api(`/api/admin/users/${blockBtn.dataset.block}/block`, { method: 'POST', body: { blocked: blocking } });
+      toast(blocking ? 'error' : 'win', blocking ? 'Account blocked' : 'Account unblocked', blocking ? 'The user has been locked out.' : 'The user can log in again.');
+      loadAdminUsers();
+    } catch (err) {
+      toast('error', 'Failed', err.message);
+      blockBtn.disabled = false;
+    }
+    return;
+  }
   const btn = e.target.closest('[data-adjust]');
   if (!btn) return;
   const dir = Number(btn.dataset.dir);

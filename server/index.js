@@ -95,6 +95,9 @@ function auth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   const user = store.verifyToken(token);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  if (user.blocked) {
+    return res.status(403).json({ error: 'This account has been blocked for violating our terms of service. Contact support if you believe this is a mistake.', blocked: true });
+  }
   req.user = user;
   next();
 }
@@ -426,7 +429,7 @@ app.get('/api/admin/users', auth, adminOnly, handle((req, res) => {
         country: u.country || '🌐', countryCode: u.countryCode || '', lastIp: u.lastIp || '',
         demo: round2(u.demoBalance), live: round2(u.liveBalance),
         trades: u.trades.length, wins, losses, pending, deposited: round2(deposited),
-        isAdmin: store.isAdmin(u),
+        isAdmin: store.isAdmin(u), blocked: !!u.blocked,
       };
     });
   res.json({ users, count: users.length });
@@ -452,6 +455,24 @@ app.post('/api/admin/users/:userId/adjust', auth, adminOnly, handle((req, res) =
     message: `An admin ${delta > 0 ? 'credited' : 'debited'} $${Math.abs(delta).toFixed(2)} ${delta > 0 ? 'to' : 'from'} your ${account} account`,
   });
   res.json({ ok: true, balances: store.balances(user) });
+}));
+
+// Block / unblock an account. Blocked users cannot log in and every
+// authenticated API call is rejected, locking them out immediately.
+app.post('/api/admin/users/:userId/block', auth, adminOnly, handle((req, res) => {
+  const user = store.get(req.params.userId);
+  if (!user) throw new ApiError('User not found', 404);
+  if (store.isAdmin(user)) throw new ApiError('Admin accounts cannot be blocked');
+  user.blocked = !!req.body?.blocked;
+  store.save(user);
+  if (user.blocked) {
+    notifyUser(user.id, {
+      type: 'account_blocked',
+      message: 'Your account has been blocked for violating our terms of service.',
+    });
+  }
+  notifyAdmins();
+  res.json({ ok: true, blocked: user.blocked });
 }));
 
 app.post('/api/reset-demo', auth, handle((req, res) => {
