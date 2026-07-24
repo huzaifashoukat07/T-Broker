@@ -175,6 +175,11 @@ class Market {
     a.target = price;
   }
 
+  isGuided(id) {
+    const a = this.assets.get(id);
+    return !!(a && a.guided);
+  }
+
   setGuided(id, on) {
     const a = this.assets.get(id);
     if (!a || a.guided === on) return;

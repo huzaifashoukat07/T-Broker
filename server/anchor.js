@@ -115,6 +115,9 @@ class AnchorFeed {
   async loop() {
     while (!this.stopped) {
       const due = SOURCES.filter((s) => {
+        // Assets already carrying a realtime quote (Twelve Data) don't need a
+        // daily anchor — skip them to save quota and avoid pointless retries.
+        if (this.market.isGuided(s.id)) return false;
         const a = this.anchors[s.id];
         return !a || Date.now() - a.at >= REFRESH_MS;
       });

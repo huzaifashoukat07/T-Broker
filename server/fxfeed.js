@@ -43,7 +43,31 @@ const SYMBOLS = {
 const HISTORY_INTERVALS = { 60: '1min', 300: '5min', 3600: '1h', 86400: '1day' };
 
 const MIN_POLL_MS = 5000;
-const MAX_POLL_MS = 120000;
+const MAX_POLL_MS = 300000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
+
+// Paces every request — history seeding and quote polling alike — against the
+// plan's credits-per-minute allowance, one credit per symbol.
+//
+// Deliberately spaces requests evenly instead of allowing an initial burst:
+// the API enforces a *rolling* window, so spending a full minute's allowance
+// up front still trips the limit on the very next request.
+class CreditBucket {
+  constructor(perMin) {
+    // 15% headroom: the server measures its window on arrival times, so
+    // spacing exactly at the limit still clips the boundary now and then.
+    this.spacingMs = 60000 / (Math.max(1, perMin) * 0.85);
+    this.nextAt = 0;
+  }
+
+  async take(n) {
+    const now = Date.now();
+    const at = Math.max(now, this.nextAt);
+    this.nextAt = at + this.spacingMs * n;
+    if (at > now) await sleep(at - now);
+  }
+}
 
 function getJSON(url) {
   const lib = url.startsWith('https:') ? https : require('http');
@@ -75,18 +99,31 @@ function parseTime(dt) {
 }
 
 class FxFeed {
-  constructor(market) {
+  constructor(market, onHistory) {
     this.market = market;
+    this.onHistory = onHistory; // tell connected charts to reload this asset
     this.key = process.env.TWELVEDATA_API_KEY || '';
     this.symbols = new Map(); // assetId -> 'EUR/USD'
+    // TWELVEDATA_SYMBOLS can narrow the live set (e.g. "EURUSD,GBPUSD,XAUUSD"),
+    // which is how you stay inside a small plan's daily quota.
+    const only = String(process.env.TWELVEDATA_SYMBOLS || '')
+      .toUpperCase().split(',').map((s) => s.trim()).filter(Boolean);
     for (const [assetId, symbol] of Object.entries(SYMBOLS)) {
+      if (only.length && !only.includes(assetId)) continue;
       if (market.getAsset(assetId)) this.symbols.set(assetId, symbol);
     }
     // Credits-per-minute budget: each polled symbol costs 1 credit per poll.
     // Defaults to the Grow plan's 55/min; set TWELVEDATA_CREDITS_PER_MIN to
     // match your plan (Basic/free is 8).
     this.budget = Number(process.env.TWELVEDATA_CREDITS_PER_MIN) || 55;
-    this.pollMs = Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, Math.ceil((this.symbols.size * 60000) / this.budget)));
+    this.bucket = new CreditBucket(this.budget);
+    // A batch request costs one credit per symbol, so it must never ask for
+    // more symbols than a minute's allowance — bigger sets are split and the
+    // chunks are spent across the cycle.
+    this.chunk = Math.max(1, Math.min(this.symbols.size, Math.floor(this.budget)));
+    // Polling is sized to ~70% of the allowance so the background history
+    // load still gets credits; at 100% the seeding queue would never drain.
+    this.pollMs = Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, Math.ceil((this.symbols.size * 60000) / (this.budget * 0.7))));
     this.basePollMs = this.pollMs;
     this.stopped = false;
     this.lastOk = 0;
@@ -99,8 +136,11 @@ class FxFeed {
     }
     if (!this.symbols.size) return;
     console.log(`[fx] Twelve Data enabled for ${this.symbols.size} assets — polling every ${Math.round(this.pollMs / 1000)}s (${this.budget} credits/min budget)`);
-    await this.seedAll();
+    // Quotes first so prices go live straight away, then backfill history in
+    // the background — on a small plan seeding takes minutes, and waiting for
+    // it would leave the whole board simulated until it finished.
     this.poll();
+    this.seedAll().catch((e) => console.log(`[fx] history load stopped: ${e.message}`));
     // Watchdog: if quotes stop arriving, drop the assets back to plain
     // simulation so the "live" badge never lies.
     this.watchdog = setInterval(() => {
@@ -114,19 +154,25 @@ class FxFeed {
   }
 
   // Load genuine OHLC history for the timeframes Twelve Data can serve.
-  // Runs once at startup; a failure for one asset just leaves it simulated.
+  // Runs once at startup, paced by the credit budget, so on a small plan it
+  // fills in gradually rather than failing outright. The newest close doubles
+  // as the real price, which saves a quote request per asset.
   async seedAll() {
     for (const [assetId, symbol] of this.symbols) {
       try {
-        const price = await this.fetchPrice(symbol);
-        if (price) this.market.anchorPrice(assetId, price); // lift simulated history to the real level
         const candles = {};
         for (const [tf, interval] of Object.entries(HISTORY_INTERVALS)) {
           const series = await this.fetchSeries(symbol, interval);
           if (series.length) candles[tf] = series;
         }
+        const minute = candles[60];
+        if (minute && minute.length) {
+          // lift the simulated sub-minute history to the real price level
+          this.market.anchorPrice(assetId, minute[minute.length - 1].c);
+        }
         if (Object.keys(candles).length) {
           this.market.replaceCandles(assetId, candles);
+          this.onHistory?.(assetId);
           console.log(`[fx] ${assetId}: loaded real history from Twelve Data (${symbol})`);
         }
       } catch (e) {
@@ -135,16 +181,8 @@ class FxFeed {
     }
   }
 
-  async fetchPrice(symbol) {
-    const url = `${API_BASE}/price?symbol=${encodeURIComponent(symbol)}&apikey=${this.key}`;
-    const data = await getJSON(url);
-    const err = apiError(data);
-    if (err) throw err;
-    const p = parseFloat(data.price);
-    return Number.isFinite(p) ? p : null;
-  }
-
   async fetchSeries(symbol, interval) {
+    await this.bucket.take(1);
     const url = `${API_BASE}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}`
       + `&outputsize=600&timezone=UTC&apikey=${this.key}`;
     const data = await getJSON(url);
@@ -160,24 +198,34 @@ class FxFeed {
       .sort((a, b) => a.t - b.t); // Twelve Data returns newest first
   }
 
-  // One batched quote request for every symbol (1 credit per symbol), then
-  // hand each price to the market as a convergence target.
+  // Batched quote requests (1 credit per symbol), split into chunks that fit
+  // the plan's per-minute allowance. Each price becomes a convergence target.
   async tick() {
-    const symbols = [...this.symbols.values()];
-    const url = `${API_BASE}/price?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${this.key}`;
-    const data = await getJSON(url);
-    const err = apiError(data);
-    if (err) throw err;
+    const entries = [...this.symbols.entries()];
     let applied = 0;
-    for (const [assetId, symbol] of this.symbols) {
-      // batched responses are keyed by symbol; a single symbol returns bare
-      const entry = symbols.length === 1 ? data : data[symbol];
-      const price = parseFloat(entry && entry.price);
-      if (!Number.isFinite(price) || price <= 0) continue;
-      this.market.setTarget(assetId, price);
-      applied++;
+    let lastError = null;
+    for (let i = 0; i < entries.length; i += this.chunk) {
+      const group = entries.slice(i, i + this.chunk);
+      const symbols = group.map(([, s]) => s);
+      try {
+        await this.bucket.take(symbols.length);
+        const url = `${API_BASE}/price?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${this.key}`;
+        const data = await getJSON(url);
+        const err = apiError(data);
+        if (err) throw err;
+        for (const [assetId, symbol] of group) {
+          // batched responses are keyed by symbol; a single symbol returns bare
+          const entry = symbols.length === 1 ? data : data[symbol];
+          const price = parseFloat(entry && entry.price);
+          if (!Number.isFinite(price) || price <= 0) continue;
+          this.market.setTarget(assetId, price);
+          applied++;
+        }
+      } catch (e) {
+        lastError = e;
+      }
     }
-    if (!applied) throw new Error('no prices in response');
+    if (!applied) throw lastError || new Error('no prices in response');
     this.lastOk = Date.now();
   }
 
