@@ -337,9 +337,13 @@ function onTicks(msg) {
   for (const t of msg.ticks) {
     state.prices[t.asset] = t;
     const a = state.assets.find((x) => x.id === t.asset);
-    if (a && a.live !== t.live) {
+    // An asset flips between live and OTC as its feed drops or returns, so the
+    // header and the asset list have to follow it without a reload.
+    if (a && (a.live !== t.live || a.otc !== t.otc)) {
       a.live = t.live;
+      a.otc = t.otc;
       if (a === state.asset) renderAssetHeader();
+      if (!$('#asset-modal').classList.contains('hidden')) renderAssetList($('#asset-search').value);
     }
     if (state.asset && t.asset === state.asset.id) {
       chart.tick(t.price, msg.time, t.dir);
@@ -400,10 +404,13 @@ function syncChartTrades() {
 // ---------------------------------------------------------------- asset switching
 
 function renderAssetHeader() {
-  $('#asset-btn-name').textContent = state.asset.name;
+  // While a market is closed or its feed is down the pair trades as OTC, and
+  // the name says so — users must always know which one they're on.
+  const name = assetLabel(state.asset);
+  $('#asset-btn-name').textContent = name;
   $('#asset-live').classList.toggle('hidden', !state.asset.live);
   $('#asset-btn-payout').textContent = Math.round(state.asset.payout * 100) + '%';
-  $('#panel-asset-name').textContent = state.asset.name;
+  $('#panel-asset-name').textContent = name;
   $('#panel-payout').textContent = Math.round(state.asset.payout * 100) + '%';
   updateProfitPreview();
 }
@@ -414,6 +421,12 @@ function selectAsset(asset) {
   renderAssetHeader();
   loadCandles();
   closeModals();
+}
+
+// Display name for an asset: pairs running on the synthetic fallback are
+// labelled "… OTC", the way binary brokers mark them.
+function assetLabel(a) {
+  return a && a.otc ? `${a.name} OTC` : (a ? a.name : '');
 }
 
 function renderAssetList(filter = '') {
@@ -434,7 +447,7 @@ function renderAssetList(filter = '') {
       const row = document.createElement('div');
       row.className = 'asset-row' + (a.id === state.asset.id ? ' active' : '');
       row.innerHTML = `
-        <span class="asset-row-name">${a.name}${a.live ? ' <span class="live-badge">● LIVE</span>' : ''}${a.otc ? ' <span class="otc-badge">OTC</span>' : ''}</span>
+        <span class="asset-row-name">${escapeHtml(assetLabel(a))}${a.live ? ' <span class="live-badge">● LIVE</span>' : ''}${a.otc ? ' <span class="otc-badge">OTC</span>' : ''}</span>
         <span class="asset-row-price" data-price="${a.id}">${(state.prices[a.id]?.price ?? a.price).toFixed(a.decimals)}</span>
         <span class="asset-row-payout">${Math.round(a.payout * 100)}%</span>`;
       row.addEventListener('click', () => selectAsset(a));

@@ -43,7 +43,10 @@ const SYMBOLS = {
 const HISTORY_INTERVALS = { 60: '1min', 300: '5min', 3600: '1h', 86400: '1day' };
 
 const MIN_POLL_MS = 5000;
-const MAX_POLL_MS = 300000;
+// Backoff ceiling. Kept short deliberately: while quotes are down the assets
+// trade as OTC, so this is how long a pair can stay synthetic after its real
+// market reopens (Monday morning, or a quota reset).
+const MAX_POLL_MS = 60000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 
