@@ -47,6 +47,8 @@ const MIN_POLL_MS = 5000;
 // trade as OTC, so this is how long a pair can stay synthetic after its real
 // market reopens (Monday morning, or a quota reset).
 const MAX_POLL_MS = 60000;
+// A quote that hasn't moved for this long is treated as a closed market.
+const FROZEN_MS = 20 * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 
@@ -130,6 +132,7 @@ class FxFeed {
     this.basePollMs = this.pollMs;
     this.stopped = false;
     this.lastOk = 0;
+    this.stale = new Map(); // assetId -> { price, since } for frozen-quote detection
   }
 
   async start() {
@@ -203,24 +206,42 @@ class FxFeed {
 
   // Batched quote requests (1 credit per symbol), split into chunks that fit
   // the plan's per-minute allowance. Each price becomes a convergence target.
+  //
+  // Uses /quote rather than /price because it carries is_market_open. A closed
+  // market keeps serving its last close forever, which would otherwise look
+  // like a perfectly healthy feed and leave a frozen "LIVE" chart all weekend.
   async tick() {
     const entries = [...this.symbols.entries()];
     let applied = 0;
+    let closed = 0;
     let lastError = null;
     for (let i = 0; i < entries.length; i += this.chunk) {
       const group = entries.slice(i, i + this.chunk);
       const symbols = group.map(([, s]) => s);
       try {
         await this.bucket.take(symbols.length);
-        const url = `${API_BASE}/price?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${this.key}`;
+        const url = `${API_BASE}/quote?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${this.key}`;
         const data = await getJSON(url);
         const err = apiError(data);
         if (err) throw err;
         for (const [assetId, symbol] of group) {
           // batched responses are keyed by symbol; a single symbol returns bare
           const entry = symbols.length === 1 ? data : data[symbol];
-          const price = parseFloat(entry && entry.price);
+          if (!entry) continue;
+          const price = parseFloat(entry.close ?? entry.price);
+          // Market shut (weekend, exchange hours): hand straight over to OTC
+          // rather than waiting for the staleness watchdog.
+          if (entry.is_market_open === false) {
+            if (this.market.isGuided(assetId)) {
+              console.log(`[fx] ${assetId}: market closed — handing over to OTC`);
+            }
+            this.market.setGuided(assetId, false);
+            this.stale.delete(assetId);
+            closed++;
+            continue;
+          }
           if (!Number.isFinite(price) || price <= 0) continue;
+          if (this.isFrozen(assetId, price)) { closed++; continue; }
           this.market.setTarget(assetId, price);
           applied++;
         }
@@ -228,8 +249,28 @@ class FxFeed {
         lastError = e;
       }
     }
-    if (!applied) throw lastError || new Error('no prices in response');
+    // An all-closed market is a success, not a failure — don't back off for it.
+    if (!applied && !closed) throw lastError || new Error('no prices in response');
     this.lastOk = Date.now();
+  }
+
+  // Safety net for symbols the provider doesn't flag: a price that hasn't
+  // moved at all for a long stretch means the market isn't trading, so the
+  // asset goes to OTC instead of showing a flat "live" chart. The window is
+  // deliberately generous — wrongly demoting a live market is worse than
+  // being slow to spot a closed one.
+  isFrozen(assetId, price) {
+    const prev = this.stale.get(assetId);
+    if (!prev || prev.price !== price) {
+      this.stale.set(assetId, { price, since: Date.now() });
+      return false;
+    }
+    if (Date.now() - prev.since < FROZEN_MS) return false;
+    if (this.market.isGuided(assetId)) {
+      console.log(`[fx] ${assetId}: quote unchanged for ${Math.round(FROZEN_MS / 60000)}min — treating as closed, handing over to OTC`);
+    }
+    this.market.setGuided(assetId, false);
+    return true;
   }
 
   poll() {
