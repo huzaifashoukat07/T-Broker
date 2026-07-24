@@ -111,11 +111,19 @@ class Chain {
     const jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : 1) * v * (2 + rng() * 5) : 0;
 
     // reversion targets a drifting anchor, not the fixed open — keeps the
-    // price from exploding without making its destination guessable
+    // short-term path from being guessable
     this.anchor += (this.price - this.anchor) * 0.0008;
     const reversion = ((this.anchor - this.price) / this.anchor) * 0.0025;
 
-    this.price = this.price * (1 + g * v + this.momentum + jump + reversion);
+    // hard drift bound: a pull toward the segment open that grows with the
+    // SQUARE of displacement. Within ±2-3% it's negligible, beyond that it
+    // dominates every other term — so a segment that runs for hours (crypto
+    // when its stream is down all weekend) can never wander to a silly level
+    // and blow out the chart's price scale.
+    const disp = (this.open - this.price) / this.open;
+    const bound = disp * Math.abs(disp) * 0.35;
+
+    this.price = this.price * (1 + g * v + this.momentum + jump + reversion + bound);
     this.n++;
     return this.price;
   }
@@ -212,12 +220,16 @@ class OtcEngine {
     const now = Date.now();
     this.ensureDay(dayKey(now));
     const start = Math.min(this.tickIndex(now), TICKS_PER_DAY - 1);
-    const open = Number.isFinite(openPrice) && openPrice > 0 ? openPrice : 1;
+    // Never invent an opening price: a chain started at a bogus level (e.g. 1
+    // against BTC's 64k history) wrecks the chart's price scale. Without a
+    // sane open, stay out and let the next tick retry.
+    if (!Number.isFinite(openPrice) || openPrice <= 0) return;
+    const open = openPrice;
     const v = (Number.isFinite(vol) && vol > 0 ? vol : 0.0001) * VOL_MULTIPLIER;
     this.chains.set(assetId, new Chain(this.seedFor(this.date), assetId, start, open, v));
     const segs = this.days[this.date]?.segments;
     if (Array.isArray(segs) && segs.length < MAX_SEGMENTS_PER_DAY) {
-      segs.push({ asset: assetId, start, open, vol: v, end: null, algo: 2 });
+      segs.push({ asset: assetId, start, open, vol: v, end: null, algo: 3 });
       this.persist();
     }
     console.log(`[otc] ${assetId}: live feed unavailable — trading as OTC from ${open}`);
@@ -282,7 +294,7 @@ class OtcEngine {
       }));
     return {
       algorithm: {
-        version: 2,
+        version: 3,
         summary: 'Within an OTC segment: price[n] = price[n-1] * (1 + g*v + momentum + jump + reversion), starting from the segment open. Segments record which algo version generated them.',
         prng: 'mulberry32 seeded with the first 8 hex chars of sha256(dailySeed + ":" + assetId + ":" + segmentStartTick); all draws below consume this single stream in the order listed',
         perTick: [
@@ -294,7 +306,8 @@ class OtcEngine {
           'if rng() < 0.0025: momentum = -momentum*(1.2 + rng()); trend = -trend',
           'jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : +1) * v * (2 + rng()*5) : 0',
           'anchor += (price - anchor)*0.0008; reversion = (anchor - price)/anchor * 0.0025',
-          'price *= 1 + g*v + momentum + jump + reversion',
+          'disp = (open - price)/open; bound = disp*|disp|*0.35',
+          'price *= 1 + g*v + momentum + jump + reversion + bound',
         ],
         initialState: 'price = anchor = segment open; momentum = 0; volState = 1; trend = 0; regimeLeft = 0',
         dailySeed: 'HMAC-SHA256(masterSecret, "otc:" + YYYY-MM-DD)',
