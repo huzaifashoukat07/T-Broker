@@ -145,8 +145,14 @@ class OtcEngine {
 
   ensureDay(dateStr) {
     this.date = dateStr;
-    if (!this.days[dateStr]) {
+    const rec = this.days[dateStr];
+    if (!rec) {
       this.days[dateStr] = { commitment: this.commitmentFor(dateStr), segments: [] };
+      this.persist();
+    } else if (!Array.isArray(rec.segments)) {
+      // Records persisted by an earlier version of this engine have no
+      // segments array — bring them forward rather than crashing on them.
+      rec.segments = [];
       this.persist();
     }
   }
@@ -164,8 +170,8 @@ class OtcEngine {
     const open = Number.isFinite(openPrice) && openPrice > 0 ? openPrice : 1;
     const v = (Number.isFinite(vol) && vol > 0 ? vol : 0.0001) * VOL_MULTIPLIER;
     this.chains.set(assetId, new Chain(this.seedFor(this.date), assetId, start, open, v));
-    const segs = this.days[this.date].segments;
-    if (segs.length < MAX_SEGMENTS_PER_DAY) {
+    const segs = this.days[this.date]?.segments;
+    if (Array.isArray(segs) && segs.length < MAX_SEGMENTS_PER_DAY) {
       segs.push({ asset: assetId, start, open, vol: v, end: null });
       this.persist();
     }
@@ -197,8 +203,9 @@ class OtcEngine {
     if (dayKey(now) !== this.date) {
       // Midnight UTC: close the segment and restart under the new day's seed,
       // carrying the price forward.
-      const price = this.chains.get(assetId)?.price;
-      const vol = this.chains.get(assetId)?.vol;
+      const prev = this.chains.get(assetId);
+      if (!prev) return null; // not in OTC mode; the tick loop will re-enter
+      const { price, vol } = prev;
       this.release(assetId);
       this.ensureDay(dayKey(now));
       this.enter(assetId, price, vol / VOL_MULTIPLIER);
