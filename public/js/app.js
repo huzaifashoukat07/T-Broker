@@ -434,7 +434,7 @@ function renderAssetList(filter = '') {
       const row = document.createElement('div');
       row.className = 'asset-row' + (a.id === state.asset.id ? ' active' : '');
       row.innerHTML = `
-        <span class="asset-row-name">${a.name}${a.live ? ' <span class="live-badge">● LIVE</span>' : ''}</span>
+        <span class="asset-row-name">${a.name}${a.live ? ' <span class="live-badge">● LIVE</span>' : ''}${a.otc ? ' <span class="otc-badge">OTC</span>' : ''}</span>
         <span class="asset-row-price" data-price="${a.id}">${(state.prices[a.id]?.price ?? a.price).toFixed(a.decimals)}</span>
         <span class="asset-row-payout">${Math.round(a.payout * 100)}%</span>`;
       row.addEventListener('click', () => selectAsset(a));

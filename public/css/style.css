@@ -129,6 +129,13 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   padding: 2px 7px; border-radius: 6px; animation: live-pulse 1.6s ease-in-out infinite;
 }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+/* OTC = synthetic instrument, open 24/7. Deliberately styled differently
+   from the LIVE badge so real market data is never confused with it. */
+.otc-badge {
+  background: rgba(247,179,43,.16); color: #f7b32b;
+  font-size: 10px; font-weight: 800; letter-spacing: .6px;
+  padding: 2px 7px; border-radius: 6px;
+}
 .asset-btn svg { color: var(--muted); }
 
 .balance-box {

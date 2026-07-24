@@ -19,6 +19,16 @@ const ASSETS = [
   { id: 'TSLA',    name: 'Tesla',          group: 'Stocks',       price: 189.70,  vol: 0.00040, decimals: 2, payout: 0.78 },
   { id: 'AMZN',    name: 'Amazon',         group: 'Stocks',       price: 186.20,  vol: 0.00022, decimals: 2, payout: 0.75 },
   { id: 'MSFT',    name: 'Microsoft',      group: 'Stocks',       price: 447.60,  vol: 0.00016, decimals: 2, payout: 0.75 },
+  // OTC instruments: synthetic, open 24/7 (including weekends when real forex
+  // is shut). Driven by server/otc.js from a pre-committed daily seed —
+  // slightly more volatile than their real-market namesakes.
+  { id: 'EURUSD_OTC', name: 'EUR/USD OTC', group: 'OTC', price: 1.0852, vol: 0.00012, decimals: 5, payout: 0.85, otc: true },
+  { id: 'GBPUSD_OTC', name: 'GBP/USD OTC', group: 'OTC', price: 1.2648, vol: 0.00013, decimals: 5, payout: 0.84, otc: true },
+  { id: 'USDJPY_OTC', name: 'USD/JPY OTC', group: 'OTC', price: 156.42, vol: 0.00012, decimals: 3, payout: 0.83, otc: true },
+  { id: 'AUDUSD_OTC', name: 'AUD/USD OTC', group: 'OTC', price: 0.6553, vol: 0.00013, decimals: 5, payout: 0.82, otc: true },
+  { id: 'USDCAD_OTC', name: 'USD/CAD OTC', group: 'OTC', price: 1.3724, vol: 0.00012, decimals: 5, payout: 0.82, otc: true },
+  { id: 'EURGBP_OTC', name: 'EUR/GBP OTC', group: 'OTC', price: 0.8579, vol: 0.00011, decimals: 5, payout: 0.80, otc: true },
+  { id: 'XAUUSD_OTC', name: 'Gold OTC',    group: 'OTC', price: 2352.4, vol: 0.00018, decimals: 2, payout: 0.86, otc: true },
 ];
 
 const TIMEFRAMES = [5, 15, 30, 60, 300, 3600, 86400]; // seconds (5s … 1h, 1D)
@@ -46,6 +56,8 @@ class Market {
       });
     }
     this.listeners = new Set();
+    this.timeframes = TIMEFRAMES;
+    this.otcDriver = null; // set by the OTC engine; drives otc:true assets
     this.seedHistory();
   }
 
@@ -126,8 +138,13 @@ class Market {
       const tSec = Math.floor(Date.now() / 1000);
       const ticks = [];
       for (const a of this.assets.values()) {
-        if (!a.external) this.step(a);
-        this.applyTick(a, tSec); // for external assets this just keeps candle buckets contiguous
+        if (a.otc && this.otcDriver) {
+          // the OTC engine advances the chain and records each tick itself
+          this.otcDriver(a.id);
+        } else {
+          if (!a.external) this.step(a);
+          this.applyTick(a, tSec); // for external assets this just keeps candle buckets contiguous
+        }
         const prev = a.lastSent ?? a.price;
         a.lastSent = a.price;
         ticks.push({
@@ -173,6 +190,20 @@ class Market {
       a.guided = true;
     }
     a.target = price;
+  }
+
+  setOtcDriver(fn) {
+    this.otcDriver = fn;
+  }
+
+  // Write one exact OTC chain tick into the candles. Every generated tick is
+  // recorded, not just the one sampled by the tick loop, so the candle series
+  // is byte-for-byte the published chain and stays independently verifiable.
+  applyOtcTick(id, price, tSec) {
+    const a = this.assets.get(id);
+    if (!a) return;
+    a.price = price;
+    this.applyTick(a, tSec);
   }
 
   isGuided(id) {
@@ -256,6 +287,7 @@ class Market {
       decimals: a.decimals,
       price: round(a.price, a.decimals),
       live: a.external || !!a.guided,
+      otc: !!a.otc,
     }));
   }
 

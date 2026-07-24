@@ -19,6 +19,7 @@ const { WebSocketServer } = require('ws');
 const { Market, TIMEFRAMES } = require('./market');
 const { LiveFeed } = require('./livefeed');
 const { FxFeed } = require('./fxfeed');
+const { OtcEngine } = require('./otc');
 const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
 const { sendOtp, sendWalletEmail } = require('./mailer');
@@ -183,6 +184,14 @@ app.get('/api/assets', handle((req, res) => {
   });
 }));
 
+// Public audit trail for the OTC instruments: today's commitment plus the
+// revealed seeds of finished days, so anyone can regenerate past prices and
+// confirm they match what was committed to in advance.
+app.get('/api/otc/fairness', handle((req, res) => {
+  if (!otcEngine) throw new ApiError('OTC engine not running', 503);
+  res.json(otcEngine.fairness());
+}));
+
 app.get('/api/candles', handle((req, res) => {
   const { asset, tf } = req.query;
   const limit = Math.min(Number(req.query.limit) || 200, 600);
@@ -194,6 +203,7 @@ app.get('/api/candles', handle((req, res) => {
 // --- trading -----------------------------------------------------------------
 
 const openTrades = new Map(); // tradeId -> { trade, userId }
+let otcEngine = null; // set during startup
 
 app.post('/api/trade', auth, handle((req, res) => {
   const { asset, direction, amount, duration, account } = req.body || {};
@@ -589,6 +599,14 @@ function settleExpired() {
       if (trade.status === 'open') openTrades.set(trade.id, { trade, userId: user.id });
     }
   }
+
+  // Synthetic 24/7 instruments (weekends included). Must be initialised
+  // before the tick loop so the first tick already has real chain prices.
+  otcEngine = new OtcEngine(market, store);
+  await otcEngine.init().catch((e) => {
+    otcEngine = null;
+    console.log(`[otc] disabled: ${e.message}`);
+  });
 
   market.start();
 
