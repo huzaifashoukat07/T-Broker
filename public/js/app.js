@@ -261,6 +261,7 @@ async function boot() {
   state.durationIdx = Math.max(0, meta.durations.indexOf(60));
   state.asset = state.assets.find((a) => a.id === localStorage.getItem('tb_asset')) || state.assets[0];
   state.tf = Number(localStorage.getItem('tb_tf')) || meta.timeframes[0];
+  startCandleCountdown();
 
   if (state.token) {
     try {
@@ -392,9 +393,43 @@ function renderTfButtons() {
       localStorage.setItem('tb_tf', tf);
       renderTfButtons();
       loadCandles();
+      tickCandleCountdown(); // retarget the countdown at the new timeframe at once
     });
     wrap.appendChild(btn);
   }
+}
+
+// --- candle countdown ---------------------------------------------------
+// Candle buckets are aligned to the epoch (floor(now / tf) * tf), the same
+// rule the server uses, so this shows exactly when the current candle closes
+// and the next one opens. Traders need it to time entries on short expiries.
+function formatCountdown(secs, tf) {
+  if (tf >= 3600) {
+    const h = Math.floor(secs / 3600);
+    return `${h}:${String(Math.floor((secs % 3600) / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  }
+  if (tf >= 60) return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  return `${secs}s`;
+}
+
+function tickCandleCountdown() {
+  const box = $('#candle-timer');
+  if (!box || !state.tf) return;
+  const tf = state.tf;
+  const nowMs = Date.now();
+  const elapsedMs = nowMs % (tf * 1000);
+  const remainingMs = tf * 1000 - elapsedMs;
+  const secs = Math.max(0, Math.ceil(remainingMs / 1000));
+  $('#candle-timer-value').textContent = formatCountdown(secs, tf);
+  $('#candle-timer-bar').style.width = `${Math.max(0, (remainingMs / (tf * 1000)) * 100)}%`;
+  // warn over the last 20% (or last 5s, whichever is longer)
+  box.classList.toggle('ending', remainingMs <= Math.max(5000, tf * 200));
+}
+
+function startCandleCountdown() {
+  tickCandleCountdown();
+  clearInterval(window.__candleTimer);
+  window.__candleTimer = setInterval(tickCandleCountdown, 200);
 }
 
 function syncChartTrades() {

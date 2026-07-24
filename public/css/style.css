@@ -240,6 +240,40 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .chart-price.down { color: var(--down); }
 .chart-wrap { flex: 1; position: relative; min-height: 0; }
 #chart { position: absolute; inset: 0; }
+
+/* Countdown to the current candle's close. Sits over the chart, top-right,
+   and must never swallow clicks meant for the chart underneath. */
+.candle-timer {
+  /* Left-aligned on purpose: the right edge belongs to the price scale, and
+     overlaying it hides the topmost price label. */
+  position: absolute; top: 10px; left: 12px; z-index: 3; pointer-events: none;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(13, 20, 33, .82); border: 1px solid var(--border);
+  padding: 5px 10px; border-radius: 9px; backdrop-filter: blur(4px);
+}
+.candle-timer .ct-label {
+  font-size: 9px; font-weight: 800; letter-spacing: .7px; color: var(--muted);
+}
+.candle-timer .ct-value {
+  font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums;
+  min-width: 42px; text-align: right; color: var(--text);
+}
+.candle-timer .ct-bar {
+  display: block; width: 46px; height: 4px; border-radius: 3px;
+  background: rgba(255,255,255,.12); overflow: hidden;
+}
+.candle-timer .ct-bar i {
+  display: block; height: 100%; width: 100%; border-radius: 3px;
+  background: var(--up); transition: width .2s linear;
+}
+/* Final stretch of the candle — the moment that decides short trades */
+.candle-timer.ending .ct-value { color: var(--down); }
+.candle-timer.ending .ct-bar i { background: var(--down); }
+@media (max-width: 560px) {
+  .candle-timer { top: 6px; left: 8px; padding: 4px 8px; gap: 6px; }
+  .candle-timer .ct-label { display: none; }
+  .candle-timer .ct-bar { width: 32px; }
+}
 .mobile-trades-btn {
   display: none; background: var(--panel); border: 1px solid var(--border);
   padding: 7px 12px; border-radius: 9px; font-size: 12px; font-weight: 700;
