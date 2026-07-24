@@ -25,9 +25,11 @@ const TICK_MS = 500;
 const TICKS_PER_DAY = (24 * 60 * 60 * 1000) / TICK_MS; // 172800
 const KEEP_DAYS = 30;          // days of seeds/segments retained for audit
 const MAX_SEGMENTS_PER_DAY = 400;
-// OTC runs a little livelier than the real feed it stands in for, so charts
-// don't visibly go quiet when a market closes.
-const VOL_MULTIPLIER = 1.25;
+// OTC runs livelier than the real feed it stands in for. The drama comes from
+// the v2 dynamics (storms, jumps, traps) rather than raw scale — tuned by
+// simulation to a ~2.3% day range and 3x storm/calm contrast on EURUSD, with
+// direction persistence and revert-to-open both at a coin flip.
+const VOL_MULTIPLIER = 1.1;
 
 // Small, fast, fully specified PRNG so third parties can reimplement it.
 function mulberry32(a) {
@@ -49,8 +51,19 @@ function gaussFrom(rng) {
 const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10); // UTC date
 const dayStartMs = (dateStr) => Date.parse(`${dateStr}T00:00:00Z`);
 
-// One OTC segment's price chain. Deterministic given (seed, assetId, start,
-// open, vol) — replaying it reproduces exactly what users traded against.
+// One OTC segment's price chain (algorithm v2). Deterministic given (seed,
+// assetId, start, open, vol) — replaying it reproduces exactly what users
+// traded against.
+//
+// v1 was too tame: one flat volatility level, and a constant pull back to the
+// segment's opening price — which made "it always comes back" a winning bet.
+// v2 layers four effects, every one drawn from the same seeded PRNG stream:
+//   - regime machine: ranging / up-trend / down-trend spells (1-9 min)
+//   - volatility clustering: calm stretches and 'storms' up to 4x base vol
+//   - jumps: sudden 2-7x spikes, roughly every couple of minutes
+//   - trend traps: a trend that abruptly reverses mid-run
+// and reversion targets a slowly *drifting* anchor rather than the fixed
+// open, so the path wanders instead of oscillating around one level.
 class Chain {
   constructor(seedHex, assetId, start, open, vol) {
     const h = crypto.createHash('sha256').update(`${seedHex}:${assetId}:${start}`).digest('hex');
@@ -58,19 +71,51 @@ class Chain {
     this.start = start;
     this.open = open;
     this.price = open;
+    this.anchor = open;
     this.vol = vol;
     this.momentum = 0;
+    this.volState = 1;  // volatility-clustering multiplier, bounded [0.35, 6]
+    this.trend = 0;     // current regime: -1 down, 0 range, +1 up
+    this.left = 0;      // ticks remaining in the current regime
     this.n = start;
   }
 
+  // Parameters tuned by simulation (scratch tune.js sweep, set H3): full-day
+  // EURUSD stats — day range ~2.3%, 1-min range median 0.076% / p95 0.23%
+  // (storms 3.1x calm), drift-back-to-open 48%, direction persistence 48.6%.
   advance() {
-    const r = gaussFrom(this.rng);
-    this.momentum = this.momentum * 0.98 + r * this.vol * 0.1;
-    // occasional bursts, then a pull back toward the segment's open so the
-    // series stays in a believable range instead of wandering off
-    if (this.rng() < 0.001) this.momentum += (this.rng() < 0.5 ? -1 : 1) * this.vol * 2;
-    const reversion = ((this.open - this.price) / this.open) * 0.0015;
-    this.price = this.price * (1 + r * this.vol + this.momentum + reversion);
+    const rng = this.rng;
+    // regime machine: pick ranging or a directional spell for the next 1-9min
+    if (this.left <= 0) {
+      const r = rng();
+      this.trend = r < 0.45 ? 0 : r < 0.725 ? 1 : -1;
+      this.left = 120 + Math.floor(rng() * 960);
+      // one regime in five opens as a storm: volatility leaps immediately
+      if (rng() < 0.2) this.volState = Math.min(6, this.volState + 3 + rng() * 3);
+    }
+    this.left--;
+
+    const g = gaussFrom(rng);
+    // volatility clustering: |g| feeds volState so violence begets violence,
+    // decaying back toward a calm floor well below the old baseline — the
+    // contrast between quiet and storm is what makes storms feel violent
+    this.volState = Math.max(0.35, Math.min(6, this.volState * 0.988 + Math.abs(g) * 0.007));
+    const v = this.vol * this.volState;
+
+    // momentum: noise-driven with the regime's directional drift folded in
+    this.momentum = Math.max(-3 * v, Math.min(3 * v,
+      this.momentum * 0.95 + g * v * 0.05 + this.trend * v * 0.003));
+    // trend trap: occasionally the run snaps and reverses hard
+    if (rng() < 0.0025) { this.momentum = -this.momentum * (1.2 + rng()); this.trend = -this.trend; }
+    // jump: a sudden outsized spike
+    const jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : 1) * v * (2 + rng() * 5) : 0;
+
+    // reversion targets a drifting anchor, not the fixed open — keeps the
+    // price from exploding without making its destination guessable
+    this.anchor += (this.price - this.anchor) * 0.0008;
+    const reversion = ((this.anchor - this.price) / this.anchor) * 0.0025;
+
+    this.price = this.price * (1 + g * v + this.momentum + jump + reversion);
     this.n++;
     return this.price;
   }
@@ -172,7 +217,7 @@ class OtcEngine {
     this.chains.set(assetId, new Chain(this.seedFor(this.date), assetId, start, open, v));
     const segs = this.days[this.date]?.segments;
     if (Array.isArray(segs) && segs.length < MAX_SEGMENTS_PER_DAY) {
-      segs.push({ asset: assetId, start, open, vol: v, end: null });
+      segs.push({ asset: assetId, start, open, vol: v, end: null, algo: 2 });
       this.persist();
     }
     console.log(`[otc] ${assetId}: live feed unavailable — trading as OTC from ${open}`);
@@ -237,11 +282,21 @@ class OtcEngine {
       }));
     return {
       algorithm: {
-        summary: 'Within an OTC segment: price[n] = price[n-1] * (1 + g*vol + momentum + reversion), starting from the segment open',
-        prng: 'mulberry32 seeded with the first 8 hex chars of sha256(dailySeed + ":" + assetId + ":" + segmentStartTick)',
-        gaussian: 'Box-Muller over two successive PRNG outputs',
-        momentum: 'momentum = momentum*0.98 + g*vol*0.1, plus a +/- vol*2 burst when rng() < 0.001',
-        reversion: 'reversion = (open - price)/open * 0.0015',
+        version: 2,
+        summary: 'Within an OTC segment: price[n] = price[n-1] * (1 + g*v + momentum + jump + reversion), starting from the segment open. Segments record which algo version generated them.',
+        prng: 'mulberry32 seeded with the first 8 hex chars of sha256(dailySeed + ":" + assetId + ":" + segmentStartTick); all draws below consume this single stream in the order listed',
+        perTick: [
+          'if regimeLeft <= 0: r = rng(); trend = r<0.45 ? 0 : r<0.725 ? +1 : -1; regimeLeft = 120 + floor(rng()*960); if rng() < 0.2 then volState = min(6, volState + 3 + rng()*3)',
+          'regimeLeft -= 1',
+          'g = Box-Muller gaussian over successive rng() pairs (draws discarded while zero)',
+          'volState = clamp(volState*0.988 + |g|*0.007, 0.35, 6); v = segmentVol * volState',
+          'momentum = clamp(momentum*0.95 + g*v*0.05 + trend*v*0.003, -3v, +3v)',
+          'if rng() < 0.0025: momentum = -momentum*(1.2 + rng()); trend = -trend',
+          'jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : +1) * v * (2 + rng()*5) : 0',
+          'anchor += (price - anchor)*0.0008; reversion = (anchor - price)/anchor * 0.0025',
+          'price *= 1 + g*v + momentum + jump + reversion',
+        ],
+        initialState: 'price = anchor = segment open; momentum = 0; volState = 1; trend = 0; regimeLeft = 0',
         dailySeed: 'HMAC-SHA256(masterSecret, "otc:" + YYYY-MM-DD)',
         commitment: 'SHA-256(dailySeed), published before the day begins',
         tickMs: TICK_MS,
