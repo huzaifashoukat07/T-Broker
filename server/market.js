@@ -90,8 +90,12 @@ class Market {
     // Momentum decays and gets random kicks -> trending behaviour
     a.momentum = a.momentum * 0.98 + gauss() * a.vol * 0.1;
     if (Math.random() < 0.001) a.momentum += (Math.random() < 0.5 ? -1 : 1) * a.vol * 2; // news spike
-    // Mean reversion keeps the price near its base long-term
-    const reversion = (a.base - a.price) / a.base * 0.002;
+    // Pull toward the latest real quote when a polled feed is guiding this
+    // asset (strong, so the gap closes within a few seconds), otherwise a
+    // gentle drift back to the seed price.
+    const anchor = a.guided && a.target ? a.target : a.base;
+    const pull = a.guided && a.target ? 0.12 : 0.002;
+    const reversion = (anchor - a.price) / anchor * pull;
     const change = gauss() * a.vol + a.momentum + reversion;
     a.price = a.price * (1 + change);
   }
@@ -130,7 +134,7 @@ class Market {
           asset: a.id,
           price: round(a.price, a.decimals),
           dir: a.price > prev ? 1 : a.price < prev ? -1 : 0,
-          live: a.external,
+          live: a.external || !!a.guided,
         });
       }
       const payload = { time: Date.now(), ticks };
@@ -156,6 +160,32 @@ class Market {
     a.momentum = 0;
   }
 
+  // Guided mode: a polled quote feed (e.g. Twelve Data) supplies the real
+  // price every few seconds while the simulator keeps ticking in between, so
+  // the chart moves smoothly and still tracks the true market. Unlike
+  // setExternalPrice this never freezes the price between updates.
+  setTarget(id, price) {
+    const a = this.assets.get(id);
+    if (!a || a.external || !Number.isFinite(price) || price <= 0) return;
+    if (!a.guided) {
+      // first real quote: lift the whole chart to the true price level
+      this.anchorPrice(id, price);
+      a.guided = true;
+    }
+    a.target = price;
+  }
+
+  setGuided(id, on) {
+    const a = this.assets.get(id);
+    if (!a || a.guided === on) return;
+    a.guided = on;
+    if (!on) {
+      a.target = null;
+      a.base = a.price; // keep drifting from where the real feed left off
+      a.momentum = 0;
+    }
+  }
+
   setExternalPrice(id, price, timeMs) {
     const a = this.assets.get(id);
     if (!a || !a.external) return;
@@ -168,7 +198,9 @@ class Market {
   // the chart keeps its shape but sits at the true price level.
   anchorPrice(id, price) {
     const a = this.assets.get(id);
-    if (!a || a.external || !Number.isFinite(price) || price <= 0) return;
+    // Guided assets already carry a realtime quote — don't let a slower daily
+    // anchor (Alpha Vantage) pull them off it.
+    if (!a || a.external || a.guided || !Number.isFinite(price) || price <= 0) return;
     const ratio = price / a.price;
     if (!Number.isFinite(ratio) || ratio <= 0) return;
     for (const tf of TIMEFRAMES) {
@@ -218,7 +250,7 @@ class Market {
       payout: a.payout,
       decimals: a.decimals,
       price: round(a.price, a.decimals),
-      live: a.external,
+      live: a.external || !!a.guided,
     }));
   }
 

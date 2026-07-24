@@ -305,7 +305,8 @@ function connectWS() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'ticks') { state.lastTickAt = Date.now(); onTicks(msg); }
     else if (msg.type === 'trade_settled') onTradeSettled(msg);
-    else if (msg.type === 'candles_changed' && state.asset && msg.asset === state.asset.id) loadCandles();
+    // no asset on the message = every chart changed (e.g. live history loaded)
+    else if (msg.type === 'candles_changed' && state.asset && (!msg.asset || msg.asset === state.asset.id)) loadCandles();
     else if (msg.type === 'wallet_update') {
       renderBalances(msg.balances);
       toast(msg.kind || '', 'Wallet update', msg.message);

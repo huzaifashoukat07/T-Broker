@@ -18,6 +18,7 @@ const { WebSocketServer } = require('ws');
 
 const { Market, TIMEFRAMES } = require('./market');
 const { LiveFeed } = require('./livefeed');
+const { FxFeed } = require('./fxfeed');
 const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
 const { sendOtp, sendWalletEmail } = require('./mailer');
@@ -594,6 +595,13 @@ function settleExpired() {
   // Real crypto prices from Binance, with automatic fallback to simulation.
   const liveFeed = new LiveFeed(market);
   liveFeed.start().catch((e) => console.log(`[livefeed] disabled: ${e.message}`));
+
+  // Real forex / metals / stock prices from Twelve Data (needs an API key).
+  // Charts get real history, then track live quotes; falls back to simulation.
+  const fxFeed = new FxFeed(market);
+  fxFeed.start()
+    .then(() => broadcastAll({ type: 'candles_changed' }))
+    .catch((e) => console.log(`[fx] disabled: ${e.message}`));
 
   // Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
   // Connected charts are told to reload when an asset's history is rescaled.
