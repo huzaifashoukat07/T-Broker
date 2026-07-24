@@ -255,6 +255,7 @@ class Market {
     a.price = price;
     a.base = price;
     a.momentum = 0;
+    this.resetOtcChain(id);
   }
 
   replaceCandles(id, candlesByTf) {
@@ -270,6 +271,16 @@ class Market {
       a.price = newest[newest.length - 1].c;
       a.base = a.price;
     }
+    this.resetOtcChain(id);
+  }
+
+  // The asset's price level just changed under an active OTC chain (real
+  // history loaded, or a daily anchor). The chain still sits at the OLD level
+  // and would write wrong-scale candles into the new history — the flat-chart
+  // bug. Close it; the next tick re-enters OTC at the new price if the asset
+  // still has no live feed.
+  resetOtcChain(id) {
+    if (this.otc?.isActive(id)) this.otc.release(id);
   }
 
   onTick(fn) {
