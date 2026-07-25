@@ -444,6 +444,7 @@ function renderAssetHeader() {
   const name = assetLabel(state.asset);
   $('#asset-btn-name').textContent = name;
   $('#asset-live').classList.toggle('hidden', !state.asset.live);
+  $('#asset-otc').classList.toggle('hidden', !state.asset.otc);
   $('#asset-btn-payout').textContent = Math.round(state.asset.payout * 100) + '%';
   $('#panel-asset-name').textContent = name;
   $('#panel-payout').textContent = Math.round(state.asset.payout * 100) + '%';
@@ -458,10 +459,10 @@ function selectAsset(asset) {
   closeModals();
 }
 
-// Display name for an asset: pairs running on the synthetic fallback are
-// labelled "… OTC", the way binary brokers mark them.
+// Display name for an asset. OTC mode is shown by the badge alone — appending
+// "OTC" to the name as well just duplicated it ("EUR/USD OTC  [OTC]").
 function assetLabel(a) {
-  return a && a.otc ? `${a.name} OTC` : (a ? a.name : '');
+  return a ? a.name : '';
 }
 
 function renderAssetList(filter = '') {

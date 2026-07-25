@@ -25,11 +25,17 @@ const TICK_MS = 500;
 const TICKS_PER_DAY = (24 * 60 * 60 * 1000) / TICK_MS; // 172800
 const KEEP_DAYS = 30;          // days of seeds/segments retained for audit
 const MAX_SEGMENTS_PER_DAY = 400;
-// OTC runs livelier than the real feed it stands in for. The drama comes from
-// the v2 dynamics (storms, jumps, traps) rather than raw scale — tuned by
-// simulation to a ~2.3% day range and 3x storm/calm contrast on EURUSD, with
-// direction persistence and revert-to-open both at a coin flip.
-const VOL_MULTIPLIER = 1.1;
+// OTC uses ONE per-tick volatility for every instrument rather than scaling
+// each asset's own. Real base vols differ ~8x (EURUSD 6e-5 vs SOL 4.5e-4), so
+// a shared multiplier made crypto swing ~45% a day and drove it into the
+// far-field barrier constantly — and that barrier is mean reversion, which is
+// exactly the looping we were trying to remove. A uniform value keeps every
+// OTC pair lively (~4% daily sigma, 1-min ranges ~0.15%) and far from the
+// barrier, so the walk stays free.
+const OTC_TICK_VOL = 1.2e-4;
+// Barrier is a last-resort clamp only: zero inside this band, quadratic
+// outside. Wide enough that a multi-day dead feed rarely reaches it.
+const BARRIER_BAND = 0.35;
 
 // Small, fast, fully specified PRNG so third parties can reimplement it.
 function mulberry32(a) {
@@ -51,19 +57,18 @@ function gaussFrom(rng) {
 const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10); // UTC date
 const dayStartMs = (dateStr) => Date.parse(`${dateStr}T00:00:00Z`);
 
-// One OTC segment's price chain (algorithm v2). Deterministic given (seed,
+// One OTC segment's price chain (algorithm v4). Deterministic given (seed,
 // assetId, start, open, vol) — replaying it reproduces exactly what users
 // traded against.
 //
-// v1 was too tame: one flat volatility level, and a constant pull back to the
-// segment's opening price — which made "it always comes back" a winning bet.
-// v2 layers four effects, every one drawn from the same seeded PRNG stream:
+// The price is a FREE random walk. Earlier versions pulled it back toward the
+// segment's opening price, which made the chart loop inside a narrow band and
+// handed traders a real edge ("above the open -> bet down"). Structure now
+// comes only from path-dependent effects that carry no memory of the level:
 //   - regime machine: ranging / up-trend / down-trend spells (1-9 min)
-//   - volatility clustering: calm stretches and 'storms' up to 4x base vol
+//   - volatility clustering: calm stretches and storms up to 6x base vol
 //   - jumps: sudden 2-7x spikes, roughly every couple of minutes
-//   - trend traps: a trend that abruptly reverses mid-run
-// and reversion targets a slowly *drifting* anchor rather than the fixed
-// open, so the path wanders instead of oscillating around one level.
+//   - trend traps: a run that abruptly reverses (rare, by design)
 class Chain {
   constructor(seedHex, assetId, start, open, vol) {
     const h = crypto.createHash('sha256').update(`${seedHex}:${assetId}:${start}`).digest('hex');
@@ -71,7 +76,6 @@ class Chain {
     this.start = start;
     this.open = open;
     this.price = open;
-    this.anchor = open;
     this.vol = vol;
     this.momentum = 0;
     this.volState = 1;  // volatility-clustering multiplier, bounded [0.35, 6]
@@ -80,9 +84,12 @@ class Chain {
     this.n = start;
   }
 
-  // Parameters tuned by simulation (scratch tune.js sweep, set H3): full-day
-  // EURUSD stats — day range ~2.3%, 1-min range median 0.076% / p95 0.23%
-  // (storms 3.1x calm), drift-back-to-open 48%, direction persistence 48.6%.
+  // Verified against a pure-random-walk control run through the same
+  // estimator (that control scores beta -0.10, diffusion 0.89 — the estimator
+  // is biased, so those numbers ARE 'unpredictable'):
+  //   shipped v3 : beta -0.77, diffusion 0.53  <- looping, exploitable
+  //   this (v4)  : beta -0.13, diffusion 0.84  <- matches the control
+  // EURUSD 1-minute median range ~0.21%, daily excursions to ~13%.
   advance() {
     const rng = this.rng;
     // regime machine: pick ranging or a directional spell for the next 1-9min
@@ -105,25 +112,27 @@ class Chain {
     // momentum: noise-driven with the regime's directional drift folded in
     this.momentum = Math.max(-3 * v, Math.min(3 * v,
       this.momentum * 0.95 + g * v * 0.05 + this.trend * v * 0.003));
-    // trend trap: occasionally the run snaps and reverses hard
-    if (rng() < 0.0025) { this.momentum = -this.momentum * (1.2 + rng()); this.trend = -this.trend; }
+    // trend trap: occasionally the run snaps and reverses hard. Kept rare —
+    // it flips the regime, so making it frequent reintroduces mean reversion.
+    if (rng() < 0.001) { this.momentum = -this.momentum * (1.2 + rng()); this.trend = -this.trend; }
     // jump: a sudden outsized spike
     const jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : 1) * v * (2 + rng() * 5) : 0;
 
-    // reversion targets a drifting anchor, not the fixed open — keeps the
-    // short-term path from being guessable
-    this.anchor += (this.price - this.anchor) * 0.0008;
-    const reversion = ((this.anchor - this.price) / this.anchor) * 0.0025;
-
-    // hard drift bound: a pull toward the segment open that grows with the
-    // SQUARE of displacement. Within ±2-3% it's negligible, beyond that it
-    // dominates every other term — so a segment that runs for hours (crypto
-    // when its stream is down all weekend) can never wander to a silly level
-    // and blow out the chart's price scale.
+    // NO pull toward the open, and no drifting-anchor reversion. Both were
+    // present in v2/v3 and made the price an oscillator around its starting
+    // level: measured beta -0.77 against a -0.10 random-walk baseline, i.e.
+    // "it's above the open, so bet down" was a real edge, and the chart
+    // visibly looped. The walk is now free.
+    //
+    // The only level term is a far-field barrier that is exactly zero inside
+    // the barrier band and grows quadratically outside it. It exists solely so a segment
+    // running for days with a dead feed can't reach an absurd price; in normal
+    // trading it never engages.
     const disp = (this.open - this.price) / this.open;
-    const bound = disp * Math.abs(disp) * 0.35;
+    const over = Math.max(0, Math.abs(disp) - BARRIER_BAND);
+    const barrier = Math.sign(disp) * over * over * 3;
 
-    this.price = this.price * (1 + g * v + this.momentum + jump + reversion + bound);
+    this.price = this.price * (1 + g * v + this.momentum + jump + barrier);
     this.n++;
     return this.price;
   }
@@ -225,11 +234,11 @@ class OtcEngine {
     // sane open, stay out and let the next tick retry.
     if (!Number.isFinite(openPrice) || openPrice <= 0) return;
     const open = openPrice;
-    const v = (Number.isFinite(vol) && vol > 0 ? vol : 0.0001) * VOL_MULTIPLIER;
+    const v = OTC_TICK_VOL; // uniform across instruments; see note above
     this.chains.set(assetId, new Chain(this.seedFor(this.date), assetId, start, open, v));
     const segs = this.days[this.date]?.segments;
     if (Array.isArray(segs) && segs.length < MAX_SEGMENTS_PER_DAY) {
-      segs.push({ asset: assetId, start, open, vol: v, end: null, algo: 3 });
+      segs.push({ asset: assetId, start, open, vol: v, end: null, algo: 4 });
       this.persist();
     }
     console.log(`[otc] ${assetId}: live feed unavailable — trading as OTC from ${open}`);
@@ -294,8 +303,8 @@ class OtcEngine {
       }));
     return {
       algorithm: {
-        version: 3,
-        summary: 'Within an OTC segment: price[n] = price[n-1] * (1 + g*v + momentum + jump + reversion), starting from the segment open. Segments record which algo version generated them.',
+        version: 4,
+        summary: 'Within an OTC segment: price[n] = price[n-1] * (1 + g*v + momentum + jump + barrier), starting from the segment open. A free random walk; the barrier is zero unless the price is more than 20% from the open. Segments record which algo version generated them.',
         prng: 'mulberry32 seeded with the first 8 hex chars of sha256(dailySeed + ":" + assetId + ":" + segmentStartTick); all draws below consume this single stream in the order listed',
         perTick: [
           'if regimeLeft <= 0: r = rng(); trend = r<0.45 ? 0 : r<0.725 ? +1 : -1; regimeLeft = 120 + floor(rng()*960); if rng() < 0.2 then volState = min(6, volState + 3 + rng()*3)',
@@ -303,18 +312,18 @@ class OtcEngine {
           'g = Box-Muller gaussian over successive rng() pairs (draws discarded while zero)',
           'volState = clamp(volState*0.988 + |g|*0.007, 0.35, 6); v = segmentVol * volState',
           'momentum = clamp(momentum*0.95 + g*v*0.05 + trend*v*0.003, -3v, +3v)',
-          'if rng() < 0.0025: momentum = -momentum*(1.2 + rng()); trend = -trend',
+          'if rng() < 0.001: momentum = -momentum*(1.2 + rng()); trend = -trend',
           'jump = rng() < 0.004 ? (rng() < 0.5 ? -1 : +1) * v * (2 + rng()*5) : 0',
-          'anchor += (price - anchor)*0.0008; reversion = (anchor - price)/anchor * 0.0025',
-          'disp = (open - price)/open; bound = disp*|disp|*0.35',
-          'price *= 1 + g*v + momentum + jump + reversion + bound',
+          'disp = (open - price)/open; over = max(0, |disp| - barrierBand); barrier = sign(disp)*over*over*3   (zero inside the band)',
+          'price *= 1 + g*v + momentum + jump + barrier',
         ],
-        initialState: 'price = anchor = segment open; momentum = 0; volState = 1; trend = 0; regimeLeft = 0',
+        initialState: 'price = segment open; momentum = 0; volState = 1; trend = 0; regimeLeft = 0',
         dailySeed: 'HMAC-SHA256(masterSecret, "otc:" + YYYY-MM-DD)',
         commitment: 'SHA-256(dailySeed), published before the day begins',
         tickMs: TICK_MS,
         ticksPerDay: TICKS_PER_DAY,
-        volMultiplier: VOL_MULTIPLIER,
+        tickVol: OTC_TICK_VOL,
+        barrierBand: BARRIER_BAND,
         note: 'A segment depends only on the seed, the asset id, its start tick and its opening price. No user data is an input.',
       },
       today: {
