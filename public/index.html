@@ -383,6 +383,18 @@
     </div>
   </div>
 
+  <!-- Compose an account notice email to a single user -->
+  <div class="modal hidden" id="notice-modal">
+    <div class="modal-head"><h3>✉️ Send notice</h3><button class="modal-close">✕</button></div>
+    <p class="modal-sub">Sent from <b>info@nova-market.trade</b> with the NovaTrade signature. The recipient never sees your email client or IP.</p>
+    <div class="notice-to" id="notice-to">—</div>
+    <label class="field-label">Template</label>
+    <select class="modal-input" id="notice-template"></select>
+    <label class="field-label">Extra message <span class="fl-hint">(optional — appended to the template)</span></label>
+    <textarea class="modal-input" id="notice-message" rows="5" placeholder="Add anything specific for this user…"></textarea>
+    <button class="btn-primary" id="notice-send">Send email</button>
+  </div>
+
   <div class="modal hidden" id="top-modal">
     <div class="modal-head"><h3>🏆 Top traders today</h3><button class="modal-close">✕</button></div>
     <div class="lb-standing" id="lb-standing">

@@ -22,7 +22,7 @@ const { FxFeed } = require('./fxfeed');
 const { OtcEngine } = require('./otc');
 const { AnchorFeed } = require('./anchor');
 const { Store, ApiError } = require('./store');
-const { sendOtp, sendWalletEmail } = require('./mailer');
+const { sendOtp, sendWalletEmail, sendNotice, NOTICE_TEMPLATES } = require('./mailer');
 const { buildLeaderboard } = require('./leaderboard');
 const { lookupCountry } = require('./geo');
 
@@ -484,6 +484,37 @@ app.post('/api/admin/users/:userId/block', auth, adminOnly, handle((req, res) =>
   }
   notifyAdmins();
   res.json({ ok: true, blocked: user.blocked });
+}));
+
+// Email a user a branded account notice from the admin panel. Sent through
+// the normal mail transport, so the recipient never sees the operator's own
+// mail client or IP address.
+app.get('/api/admin/notice-templates', auth, adminOnly, handle((req, res) => {
+  res.json({
+    templates: Object.entries(NOTICE_TEMPLATES).map(([id, t]) => ({ id, label: t.label, subject: t.subject })),
+  });
+}));
+
+app.post('/api/admin/users/:userId/notice', auth, adminOnly, handle(async (req, res) => {
+  const user = store.get(req.params.userId);
+  if (!user) throw new ApiError('User not found', 404);
+  const template = String(req.body?.template || 'custom');
+  if (!NOTICE_TEMPLATES[template]) throw new ApiError('Unknown notice template');
+  const message = String(req.body?.message || '').slice(0, 4000);
+  if (template === 'custom' && !message.trim()) throw new ApiError('Write a message to send');
+  try {
+    const sent = await sendNotice(user.email, user.name, {
+      template, message, subject: req.body?.subject,
+    });
+    // Keep an audit trail of what was sent to whom.
+    user.notices = user.notices || [];
+    user.notices.unshift({ at: Date.now(), template, message, by: req.user.email });
+    if (user.notices.length > 50) user.notices.length = 50;
+    store.save(user);
+    res.json({ ok: true, sent, email: user.email });
+  } catch (e) {
+    throw new ApiError(`Could not send email: ${e.message}`, 502);
+  }
 }));
 
 app.post('/api/reset-demo', auth, handle((req, res) => {

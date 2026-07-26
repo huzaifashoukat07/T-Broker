@@ -691,3 +691,22 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Admin: send-notice composer */
+.ar-notice {
+  border: 1px solid rgba(47,124,246,.5); color: #6ea8ff; font-weight: 700; font-size: 12px;
+  padding: 7px 12px; border-radius: 8px;
+}
+.ar-notice:hover { background: rgba(47,124,246,.12); }
+.ar-notice:disabled { opacity: .5; cursor: wait; }
+.notice-to {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 9px;
+  padding: 10px 12px; font-size: 13px; font-weight: 700; margin-bottom: 14px;
+}
+.field-label {
+  display: block; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+  color: var(--muted); margin: 0 0 6px;
+}
+.field-label .fl-hint { font-weight: 600; letter-spacing: 0; text-transform: none; }
+#notice-message { resize: vertical; font-family: inherit; line-height: 1.5; }
+#notice-template { margin-bottom: 14px; }

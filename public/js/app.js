@@ -999,6 +999,7 @@ async function loadAdminUsers() {
             <button class="ar-approve" data-adjust="${u.id}" data-acc="live" data-dir="1" title="Credit live balance">+ Credit</button>
             <button class="ar-reject" data-adjust="${u.id}" data-acc="live" data-dir="-1" title="Debit live balance">− Debit</button>
             ${u.isAdmin ? '' : `<button class="${u.blocked ? 'ar-approve' : 'ar-reject'}" data-block="${u.id}" data-to="${u.blocked ? 0 : 1}" title="${u.blocked ? 'Restore access' : 'Lock this account out'}">${u.blocked ? 'Unblock' : 'Block'}</button>`}
+            <button class="ar-notice" data-notice="${u.id}" data-name="${escapeHtml(u.name)}" data-email="${escapeHtml(u.email)}" title="Email this user an account notice">✉️ Notice</button>
           </div>
         </div>`).join('')
       : '<div class="trades-empty">No accounts found.</div>';
@@ -1013,7 +1014,49 @@ $('#admin-user-search').addEventListener('input', () => {
   userSearchTimer = setTimeout(loadAdminUsers, 250);
 });
 
+// --- admin: send an account notice email -------------------------------------
+
+let noticeTarget = null;
+
+async function openNotice(userId, name, email) {
+  noticeTarget = { userId, name, email };
+  $('#notice-to').textContent = `${name} · ${email}`;
+  $('#notice-message').value = '';
+  const sel = $('#notice-template');
+  if (!sel.options.length) {
+    try {
+      const { templates } = await api('/api/admin/notice-templates');
+      sel.innerHTML = templates.map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join('');
+    } catch { sel.innerHTML = '<option value="custom">Custom message</option>'; }
+  }
+  openModal('#notice-modal');
+}
+
+$('#notice-send').addEventListener('click', async () => {
+  if (!noticeTarget) return;
+  const btn = $('#notice-send');
+  const template = $('#notice-template').value;
+  const message = $('#notice-message').value;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const r = await api(`/api/admin/users/${noticeTarget.userId}/notice`, { method: 'POST', body: { template, message } });
+    toast('win', 'Notice sent', r.sent ? `Emailed ${r.email}.` : 'Email is not configured — logged to the server console.');
+    openModal('#admin-modal');
+  } catch (err) {
+    toast('error', 'Not sent', err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send email';
+  }
+});
+
 $('#admin-users-list').addEventListener('click', async (e) => {
+  const noticeBtn = e.target.closest('[data-notice]');
+  if (noticeBtn) {
+    openNotice(noticeBtn.dataset.notice, noticeBtn.dataset.name, noticeBtn.dataset.email);
+    return;
+  }
   const blockBtn = e.target.closest('[data-block]');
   if (blockBtn) {
     const blocking = blockBtn.dataset.to === '1';

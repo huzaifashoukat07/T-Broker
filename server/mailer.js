@@ -193,4 +193,96 @@ async function sendWalletEmail(email, kind, info = {}) {
   return true;
 }
 
-module.exports = { sendOtp, sendWalletEmail };
+// --- admin account notices ----------------------------------------------------
+// Sent from the admin panel. Every notice goes out through the same branded
+// shell as OTP and wallet mail, so the recipient sees info@nova-market.trade
+// and Brevo's infrastructure — never the operator's own mail client or IP.
+//
+// Templates deliberately state facts and offer a route of reply. Do not add
+// templates that make a customer's own deposited funds conditional on further
+// deposits or trading volume.
+
+const NOTICE_TEMPLATES = {
+  reinstated: {
+    label: 'Account reinstated',
+    subject: `Your ${BRAND} account has been reinstated`,
+    heading: 'Account reinstated ✅',
+    color: '#0ecb81',
+    badge: 'ACCOUNT ACTIVE',
+    lead: `Your account was suspended following a risk review that flagged activity inconsistent with our Terms of Service. We've now completed a manual review and your account is active again — you can log in as usual.`,
+    note: `If you believe the original flag was raised in error, reply with your registered email and we'll review it again.`,
+  },
+  suspended: {
+    label: 'Account suspended',
+    subject: `Important: your ${BRAND} account has been suspended`,
+    heading: 'Account suspended',
+    color: '#f6465d',
+    badge: 'ACCOUNT SUSPENDED',
+    lead: `Following a review, your account has been suspended for activity inconsistent with our Terms of Service. You will not be able to log in or place trades while the suspension is in place.`,
+    note: `If you believe this decision is mistaken, reply to this message with your registered email and our team will review your case.`,
+  },
+  verification: {
+    label: 'Verification required',
+    subject: `Action needed: verify your ${BRAND} account`,
+    heading: 'Verification required',
+    color: '#f7b32b',
+    badge: 'ACTION REQUIRED',
+    lead: `Before we can process your request, we need to verify your account. Please reply to this message with the documents requested by our support team.`,
+    note: `Your funds remain safe in your account while verification is completed.`,
+  },
+  bonusRemoved: {
+    label: 'Promotional bonus removed',
+    subject: `Update on your ${BRAND} promotional bonus`,
+    heading: 'Promotional bonus removed',
+    color: '#f7b32b',
+    badge: 'BONUS REMOVED',
+    lead: `The promotional bonus credited to your account has been removed under our bonus terms. <b style="color:#e7ecf5">Funds you deposited yourself are not affected</b> and remain available to withdraw at any time.`,
+    note: `Bonus credit carries a trading-volume requirement before it becomes withdrawable. Deposits you make yourself never carry any such condition.`,
+  },
+  custom: {
+    label: 'Custom message',
+    subject: `A message from ${BRAND}`,
+    heading: 'A message from our team',
+    color: '#2f7cf6',
+    badge: null,
+    lead: '',
+    note: '',
+  },
+};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// opts: { template, message, subject } — message is admin-written free text,
+// appended to (or replacing, for 'custom') the template body.
+async function sendNotice(email, name, opts = {}) {
+  const t = NOTICE_TEMPLATES[opts.template] || NOTICE_TEMPLATES.custom;
+  const subject = String(opts.subject || '').trim() || t.subject;
+  const hello = name ? `Hi ${escapeHtml(name)},` : 'Hello,';
+  // admin text is escaped, then blank lines become paragraph breaks
+  const extra = String(opts.message || '').trim();
+  const extraHtml = extra
+    ? extra.split(/\n{2,}/).map((p) => `<p style="margin:0 0 14px;color:#8493b3;font-size:13.5px;line-height:1.7">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('')
+    : '';
+
+  if (!transport && !BREVO_KEY) {
+    console.log(`[mail] (console) notice "${t.label}" to ${email}: ${subject}`);
+    return false;
+  }
+
+  const text = `${hello}\n\n${t.lead.replace(/<[^>]+>/g, '')}\n\n${extra}\n\n${t.note.replace(/<[^>]+>/g, '')}${signatureText()}`;
+  const html = shell(`
+    <p style="margin:0 0 16px;font-size:15px;color:#e7ecf5">${hello}</p>
+    <p style="margin:0 0 6px;font-size:16px;font-weight:700">${t.heading}</p>
+    ${t.lead ? `<p style="margin:0 0 20px;color:#8493b3;font-size:13.5px;line-height:1.7">${t.lead}</p>` : ''}
+    ${t.badge ? bigBox(t.badge, t.color) : ''}
+    ${extraHtml ? `<div style="margin:${t.badge ? '20px' : '0'} 0 0">${extraHtml}</div>` : ''}
+    ${t.note ? `<p style="margin:20px 0 0;color:#8493b3;font-size:12.5px;line-height:1.7">${t.note}</p>` : ''}`);
+  await deliver(email, subject, html, text);
+  return true;
+}
+
+module.exports = { sendOtp, sendWalletEmail, sendNotice, NOTICE_TEMPLATES };
