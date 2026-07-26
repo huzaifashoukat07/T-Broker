@@ -28,12 +28,19 @@ body {
 }
 .hidden { display: none !important; }
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
-input, select {
+input, select, textarea {
   font-family: inherit; font-size: 14px; color: var(--text);
   background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 12px; width: 100%; outline: none;
 }
-input:focus, select:focus { border-color: var(--accent); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
+textarea { line-height: 1.6; resize: vertical; }
+/* native dropdown arrow + dark popup list */
+select { appearance: none; -webkit-appearance: none; color-scheme: dark; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238493b3' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+}
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }
@@ -699,14 +706,44 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 }
 .ar-notice:hover { background: rgba(47,124,246,.12); }
 .ar-notice:disabled { opacity: .5; cursor: wait; }
+
+#notice-modal { width: 520px; }
+/* Recipient chip: avatar + name + email, same language as the user rows */
 .notice-to {
-  background: var(--bg-2); border: 1px solid var(--border); border-radius: 9px;
-  padding: 10px 12px; font-size: 13px; font-weight: 700; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 13px; margin-bottom: 16px;
 }
+.notice-to .nt-av {
+  width: 32px; height: 32px; flex: none; border-radius: 50%;
+  background: var(--accent); color: #fff; font-weight: 800; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.notice-to .nt-name { font-size: 13.5px; font-weight: 700; line-height: 1.3; }
+.notice-to .nt-email { font-size: 12px; color: var(--muted); line-height: 1.3; }
 .field-label {
-  display: block; font-size: 11px; font-weight: 800; letter-spacing: .5px;
-  color: var(--muted); margin: 0 0 6px;
+  display: block; font-size: 11px; font-weight: 800; letter-spacing: .6px;
+  color: var(--muted); margin: 0 0 7px; text-transform: uppercase;
 }
-.field-label .fl-hint { font-weight: 600; letter-spacing: 0; text-transform: none; }
-#notice-message { resize: vertical; font-family: inherit; line-height: 1.5; }
-#notice-template { margin-bottom: 14px; }
+.field-label .fl-hint {
+  font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted); opacity: .8;
+}
+#notice-template { margin-bottom: 16px; }
+/* The message box: roomy, monospaced-ish line height, clearly readable */
+#notice-message {
+  min-height: 132px; font-size: 13.5px; line-height: 1.65; padding: 12px 13px;
+  margin-bottom: 6px;
+}
+.notice-foot {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0 0 14px;
+}
+.notice-preview-note {
+  background: rgba(47,124,246,.08); border: 1px solid rgba(47,124,246,.28);
+  border-radius: 9px; padding: 10px 12px; margin-bottom: 16px;
+  color: #9db8e8; font-size: 12px; line-height: 1.55;
+}
+@media (max-width: 560px) {
+  #notice-modal { width: 100%; }
+  #notice-message { min-height: 118px; }
+}

@@ -1020,8 +1020,11 @@ let noticeTarget = null;
 
 async function openNotice(userId, name, email) {
   noticeTarget = { userId, name, email };
-  $('#notice-to').textContent = `${name} · ${email}`;
+  $('#notice-av').textContent = (name || '?').trim().charAt(0).toUpperCase();
+  $('#notice-name').textContent = name;
+  $('#notice-email').textContent = email;
   $('#notice-message').value = '';
+  $('#notice-count').textContent = '0 characters';
   const sel = $('#notice-template');
   if (!sel.options.length) {
     try {
@@ -1031,6 +1034,11 @@ async function openNotice(userId, name, email) {
   }
   openModal('#notice-modal');
 }
+
+$('#notice-message').addEventListener('input', (e) => {
+  const n = e.target.value.length;
+  $('#notice-count').textContent = `${n} character${n === 1 ? '' : 's'}`;
+});
 
 $('#notice-send').addEventListener('click', async () => {
   if (!noticeTarget) return;

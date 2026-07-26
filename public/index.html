@@ -386,12 +386,24 @@
   <!-- Compose an account notice email to a single user -->
   <div class="modal hidden" id="notice-modal">
     <div class="modal-head"><h3>✉️ Send notice</h3><button class="modal-close">✕</button></div>
-    <p class="modal-sub">Sent from <b>info@nova-market.trade</b> with the NovaTrade signature. The recipient never sees your email client or IP.</p>
-    <div class="notice-to" id="notice-to">—</div>
-    <label class="field-label">Template</label>
-    <select class="modal-input" id="notice-template"></select>
-    <label class="field-label">Extra message <span class="fl-hint">(optional — appended to the template)</span></label>
-    <textarea class="modal-input" id="notice-message" rows="5" placeholder="Add anything specific for this user…"></textarea>
+    <div class="notice-to">
+      <div class="nt-av" id="notice-av">?</div>
+      <div>
+        <div class="nt-name" id="notice-name">—</div>
+        <div class="nt-email" id="notice-email">—</div>
+      </div>
+    </div>
+    <label class="field-label" for="notice-template">Template</label>
+    <select id="notice-template"></select>
+    <label class="field-label" for="notice-message">
+      Your message <span class="fl-hint">— optional, added inside the email</span>
+    </label>
+    <textarea id="notice-message" rows="6" placeholder="Add anything specific for this user. Leave blank to send the template on its own."></textarea>
+    <div class="notice-foot"><span id="notice-count">0 characters</span></div>
+    <div class="notice-preview-note">
+      Sends from <b>info@nova-market.trade</b> with the NovaTrade signature and the
+      automated-message footer. Your own email address and IP are never exposed.
+    </div>
     <button class="btn-primary" id="notice-send">Send email</button>
   </div>
 
