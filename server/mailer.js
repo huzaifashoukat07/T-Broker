@@ -209,8 +209,8 @@ const NOTICE_TEMPLATES = {
     heading: 'Account reinstated ✅',
     color: '#0ecb81',
     badge: 'ACCOUNT ACTIVE',
-    lead: `Your account was suspended following a risk review that flagged activity inconsistent with our Terms of Service. We've now completed a manual review and your account is active again — you can log in as usual.`,
-    note: `If you believe the original flag was raised in error, reply with your registered email and we'll review it again.`,
+    lead: `Your account was suspended following a routine risk review. That review is now complete and your account is active again — you can log in and trade as usual.`,
+    note: `Thank you for your patience. If you need any help getting started again, our support team is here.`,
   },
   suspended: {
     label: 'Account suspended',
