@@ -29,6 +29,23 @@ const { lookupCountry } = require('./geo');
 const PORT = process.env.PORT || 3000;
 const MIN_TRADE = 1;
 const MAX_TRADE = 5000;
+// Stale-feed protection. When an asset is on a real feed but that feed is
+// lagging, its chart trails the true market — and anyone watching the real
+// market elsewhere knows which way it is about to move. Capping the stake
+// bounds what that head start can be worth per trade.
+//
+// A fast feed (Binance's push stream, or Twelve Data polled every ~13s on a
+// paid plan) stays under the threshold and is never capped. Slow polling on a
+// small plan is. OTC assets are never capped: they are synthetic, so no
+// outside reference exists to trade against.
+const SLOW_FEED_MS = Number(process.env.SLOW_FEED_MS) || 20000;
+const SLOW_FEED_MAX_TRADE = Number(process.env.SLOW_FEED_MAX_TRADE) || 100;
+
+function maxTradeFor(assetId) {
+  return market.feedIntervalMs(assetId) > SLOW_FEED_MS
+    ? Math.min(SLOW_FEED_MAX_TRADE, MAX_TRADE)
+    : MAX_TRADE;
+}
 const DURATIONS = [5, 10, 15, 30, 60, 120, 180, 300, 600]; // seconds
 
 // Crypto deposit wallets. Addresses are env-overridable; QR codes are
@@ -174,9 +191,10 @@ app.get('/api/me', auth, handle((req, res) => {
 
 app.get('/api/assets', handle((req, res) => {
   res.json({
-    assets: market.listAssets(),
+    assets: market.listAssets().map((a) => ({ ...a, maxTrade: maxTradeFor(a.id) })),
     timeframes: TIMEFRAMES,
     durations: DURATIONS,
+    limits: { min: MIN_TRADE, max: MAX_TRADE, slowFeedMax: SLOW_FEED_MAX_TRADE },
     wallets: Object.fromEntries(Object.entries(WALLETS).map(([net, w]) => [
       net, { ...w, qr: walletQr[net] || null },
     ])),
@@ -211,8 +229,11 @@ app.post('/api/trade', auth, handle((req, res) => {
   if (!a) throw new ApiError('Unknown asset');
   if (direction !== 'up' && direction !== 'down') throw new ApiError('Direction must be "up" or "down"');
   const amt = Math.round(Number(amount) * 100) / 100;
-  if (!Number.isFinite(amt) || amt < MIN_TRADE || amt > MAX_TRADE) {
-    throw new ApiError(`Trade amount must be between $${MIN_TRADE} and $${MAX_TRADE}`);
+  const cap = maxTradeFor(a.id);
+  if (!Number.isFinite(amt) || amt < MIN_TRADE || amt > cap) {
+    throw new ApiError(cap < MAX_TRADE
+      ? `${a.name} is on a delayed price feed right now, so trades are limited to $${cap}. Full limits apply on assets with a live feed.`
+      : `Trade amount must be between $${MIN_TRADE} and $${MAX_TRADE}`);
   }
   const dur = Number(duration);
   if (!DURATIONS.includes(dur)) throw new ApiError('Invalid trade duration');
@@ -587,6 +608,9 @@ function notifyAdmins() {
 
 // Broadcast ticks to everyone; settle expired trades on each tick.
 market.onTick((payload) => {
+  // Carry each asset's current stake cap so the trade panel reflects a feed
+  // going stale (or recovering) without needing a reload.
+  for (const t of payload.ticks) t.maxTrade = maxTradeFor(t.asset);
   const msg = JSON.stringify({ type: 'ticks', ...payload });
   for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(msg);
   settleExpired();

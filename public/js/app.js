@@ -256,6 +256,7 @@ async function boot() {
   state.assets = meta.assets;
   state.durations = meta.durations;
   state.timeframes = meta.timeframes;
+  state.limits = meta.limits || { min: 1, max: 5000 };
   state.wallets = meta.wallets || {};
   state.promoPct = meta.promo?.pct || 100;
   state.durationIdx = Math.max(0, meta.durations.indexOf(60));
@@ -340,6 +341,10 @@ function onTicks(msg) {
     const a = state.assets.find((x) => x.id === t.asset);
     // An asset flips between live and OTC as its feed drops or returns, so the
     // header and the asset list have to follow it without a reload.
+    if (a && t.maxTrade != null && a.maxTrade !== t.maxTrade) {
+      a.maxTrade = t.maxTrade;
+      if (a === state.asset) updateProfitPreview();
+    }
     if (a && (a.live !== t.live || a.otc !== t.otc)) {
       a.live = t.live;
       a.otc = t.otc;
@@ -523,9 +528,17 @@ $('#time-plus').addEventListener('click', () => {
 });
 
 const amtInput = $('#amt-input');
+// The cap is per-asset and can tighten while you watch, if that asset's price
+// feed falls behind the real market.
+function currentMaxTrade() {
+  const fromTick = state.asset && state.prices[state.asset.id]?.maxTrade;
+  return fromTick ?? state.asset?.maxTrade ?? state.limits?.max ?? 5000;
+}
 function setAmount(v) {
-  state.amount = Math.max(1, Math.min(5000, Math.round(v)));
+  const max = currentMaxTrade();
+  state.amount = Math.max(1, Math.min(max, Math.round(v)));
   amtInput.value = state.amount;
+  amtInput.max = max;
   updateProfitPreview();
 }
 $('#amt-minus').addEventListener('click', () => setAmount(state.amount - (state.amount <= 10 ? 1 : 10)));
@@ -537,6 +550,13 @@ function updateProfitPreview() {
   const profit = state.amount * state.asset.payout;
   $('#profit-preview').textContent = `$${(state.amount + profit).toFixed(2)}`;
   $('#profit-pct').textContent = `+${Math.round(state.asset.payout * 100)}%`;
+  // Explain a reduced cap in the panel rather than letting the trade fail
+  const max = currentMaxTrade();
+  const note = $('#amt-cap-note');
+  const capped = max < (state.limits?.max ?? 5000);
+  note.classList.toggle('hidden', !capped);
+  if (capped) note.textContent = `Max $${max} — delayed price feed on this asset`;
+  if (state.amount > max) setAmount(max);
 }
 
 async function placeTrade(direction) {

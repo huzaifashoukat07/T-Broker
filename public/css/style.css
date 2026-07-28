@@ -747,3 +747,10 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
   #notice-modal { width: 100%; }
   #notice-message { min-height: 118px; }
 }
+
+/* Reduced stake cap while an asset's price feed is lagging */
+.amt-cap-note {
+  margin-top: 7px; font-size: 11.5px; line-height: 1.45; font-weight: 600;
+  color: var(--gold); background: rgba(247,179,43,.1);
+  border: 1px solid rgba(247,179,43,.3); border-radius: 7px; padding: 6px 9px;
+}

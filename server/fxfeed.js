@@ -152,6 +152,11 @@ class FxFeed {
     this.chunk = Math.max(1, Math.min(this.symbols.size, Math.floor(this.budget)));
     // Optional UTC window to concentrate the budget in, e.g. "09:00-17:00".
     this.window = parseWindow(process.env.TWELVEDATA_ACTIVE_HOURS);
+    // Daily credit allowance (Basic/free = 800; paid plans have no daily cap).
+    // Spending is tracked per UTC day so an exhausted budget waits for the
+    // reset instead of hammering the API for 429s. Must be read BEFORE the
+    // poll interval is derived — it is one of that calculation's inputs.
+    this.dailyCap = Number(process.env.TWELVEDATA_CREDITS_PER_DAY) || 0;
 
     // Polling is sized to ~70% of the per-minute allowance so the background
     // history load still gets credits; at 100% the seeding queue never drains.
@@ -172,10 +177,6 @@ class FxFeed {
     this.lastOk = 0;
     this.stale = new Map(); // assetId -> { price, since } for frozen-quote detection
     this.recheckAt = new Map(); // assetId -> when a closed market is next checked
-    // Daily credit allowance (Basic/free = 800; paid plans have no daily cap).
-    // Spending is tracked per UTC day so an exhausted budget waits for the
-    // reset instead of hammering the API for 429s.
-    this.dailyCap = Number(process.env.TWELVEDATA_CREDITS_PER_DAY) || 0;
     this.spentDay = utcDay();
     this.spent = 0;
     this.capWarned = false;
@@ -349,7 +350,7 @@ class FxFeed {
           if (this.recheckAt.delete(assetId)) {
             console.log(`[fx] ${assetId}: market reopened — back to live prices`);
           }
-          this.market.setTarget(assetId, price);
+          this.market.setTarget(assetId, price, this.pollMs);
           applied++;
         }
       } catch (e) {

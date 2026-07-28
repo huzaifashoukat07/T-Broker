@@ -182,9 +182,12 @@ class Market {
   // price every few seconds while the simulator keeps ticking in between, so
   // the chart moves smoothly and still tracks the true market. Unlike
   // setExternalPrice this never freezes the price between updates.
-  setTarget(id, price) {
+  // intervalMs: how often this feed delivers a new quote, so stake limits can
+  // reflect how far behind the real market this asset can drift.
+  setTarget(id, price, intervalMs = 0) {
     const a = this.assets.get(id);
     if (!a || a.external || !Number.isFinite(price) || price <= 0) return;
+    a.feedIntervalMs = intervalMs;
     if (!a.guided) {
       // Only the very first quote lifts the chart to the true price level.
       // On later recoveries (after an OTC spell) the history is already real,
@@ -198,6 +201,7 @@ class Market {
       a.guided = true;
     }
     a.target = price;
+    a.lastRealAt = Date.now();
   }
 
   setOtcEngine(engine) {
@@ -230,9 +234,27 @@ class Market {
     }
   }
 
+  // How often this asset receives a REAL price, in ms. Used to cap stakes on
+  // a slow feed: a chart that only updates every minute trails the true
+  // market, and anyone watching that market elsewhere knows which way it is
+  // about to move.
+  //
+  // This reports the feed's update *interval*, not the time since the last
+  // tick — otherwise the cap would flicker between polls. Returns 0 for OTC
+  // assets, which are synthetic and have no external reference to trade
+  // against, and for push streams that update continuously.
+  feedIntervalMs(id) {
+    const a = this.assets.get(id);
+    if (!a) return 0;
+    if (!(a.external || a.guided)) return 0;
+    return a.feedIntervalMs || 0;
+  }
+
   setExternalPrice(id, price, timeMs) {
     const a = this.assets.get(id);
     if (!a || !a.external) return;
+    a.lastRealAt = Date.now();
+    a.feedIntervalMs = 0; // push stream: effectively continuous
     a.price = price;
     this.applyTick(a, Math.floor(timeMs / 1000));
   }
