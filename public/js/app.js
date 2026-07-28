@@ -171,7 +171,7 @@ $('#auth-otp').addEventListener('input', () => {
 
 function logout() {
   localStorage.removeItem('tb_token');
-  location.href = '/login';
+  location.href = '/app/login';
 }
 
 // ---------------------------------------------------------------- router
@@ -212,10 +212,15 @@ function renderRoute() {
   const authed = !!state.user;
 
   // guards
-  if (!authed && path !== '/login') {
-    history.replaceState({}, '', '/login');
-    path = '/login';
-  } else if (authed && (path === '/login' || path === '/')) {
+  // Signing in now lives in the React app at /app/login. Anyone without a
+  // session is sent there; it returns them here once authenticated, sharing
+  // the same token. The legacy auth screen below stays as a fallback for the
+  // case where the React bundle isn't available.
+  if (!authed) {
+    location.replace('/app/login');
+    return;
+  }
+  if (authed && (path === '/login' || path === '/')) {
     history.replaceState({}, '', '/trade');
     path = '/trade';
   } else if (authed && path !== '/trade' && !MODAL_ROUTES[path]) {

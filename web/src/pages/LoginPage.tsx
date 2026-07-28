@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Alert, Box, Button, Link, Paper, Stack, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
@@ -45,7 +45,21 @@ export default function LoginPage() {
     }
   }, [code, pendingEmail, dispatch]);
 
-  if (user) return <Navigate to={location.state?.from ?? '/trade'} replace />;
+  // Once signed in, hand over to the trading app. That screen is still served
+  // by the original frontend, so this is a real navigation out of /app rather
+  // than a client-side route. Both share the same token in localStorage, so
+  // the trading app picks the session straight up.
+  useEffect(() => {
+    if (user) window.location.replace(location.state?.from ?? '/trade');
+  }, [user, location.state]);
+
+  if (user) {
+    return (
+      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}>
+        <Typography color="text.secondary">Signing you in…</Typography>
+      </Box>
+    );
+  }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
