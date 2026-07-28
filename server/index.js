@@ -97,6 +97,16 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
 
+// The React rewrite is served under /app while the current site keeps /.
+// Both talk to the same API, so pages can be migrated one at a time without
+// a flag day. Falls through when public/app doesn't exist (not built yet).
+app.get(/^\/app(\/.*)?$/, (req, res, next) => {
+  if (path.extname(req.path)) return next(); // let static assets resolve
+  res.sendFile(path.join(__dirname, '..', 'public', 'app', 'index.html'), (err) => {
+    if (err) next();
+  });
+});
+
 // SPA fallback: client-side routes (/login, /trade, /wallet, ...) all serve
 // the app shell; the frontend router takes it from there. API/WS and real
 // files (paths with an extension) are excluded.
