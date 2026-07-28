@@ -29,6 +29,10 @@ Screens not yet live sit under `/app/*` as a preview.
 - `/admin` — **live**: pending requests, account management, balance
   adjustments, block/unblock, branded notice emails. Counts stay live via the
   server's `admin_refresh` push.
+- `/deposit` — **live**: payment-method tiles, amount, first-deposit promo,
+  on-chain address with QR and copy, pending-deposit banner
+- `/withdraw` — **live**: available balance excluding bonus, per-method address
+  validation, 2-per-24h and single-pending limits, bonus-forfeit warning
 - `/app/wallet` — preview: balances and transaction history
 - `/app/trade`, `/app/top`, `/app/deposit`, `/app/withdraw`, `/app/help` —
   placeholders; the originals still serve these paths

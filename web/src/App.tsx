@@ -11,10 +11,14 @@ import TradePage from './pages/TradePage';
 import WalletPage from './pages/WalletPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import AdminPage from './pages/AdminPage';
+import DepositPage from './pages/DepositPage';
+import WithdrawPage from './pages/WithdrawPage';
 
 const TITLES: Record<string, string> = {
   '/login': 'Log in',
   '/admin': 'Admin',
+  '/deposit': 'Deposit',
+  '/withdraw': 'Withdrawal',
   '/app/trade': 'Trade',
   '/app/wallet': 'Transactions',
   '/app/top': 'Top traders',
@@ -55,6 +59,16 @@ export default function App() {
       <Route path="/app/login" element={<Navigate to="/login" replace />} />
       <Route
         element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
+        <Route path="/deposit" element={<DepositPage />} />
+        <Route path="/withdraw" element={<WithdrawPage />} />
+      </Route>
+      <Route
+        element={
           <RequireAdmin>
             <AppLayout />
           </RequireAdmin>
@@ -62,6 +76,8 @@ export default function App() {
       >
         <Route path="/admin" element={<AdminPage />} />
       </Route>
+      <Route path="/app/deposit" element={<Navigate to="/deposit" replace />} />
+      <Route path="/app/withdraw" element={<Navigate to="/withdraw" replace />} />
       <Route path="/app/admin" element={<Navigate to="/admin" replace />} />
       <Route
         element={
@@ -73,8 +89,6 @@ export default function App() {
         <Route path="/app/trade" element={<TradePage />} />
         <Route path="/app/wallet" element={<WalletPage />} />
         <Route path="/app/top" element={<PlaceholderPage title="Top traders" />} />
-        <Route path="/app/deposit" element={<PlaceholderPage title="Deposit" />} />
-        <Route path="/app/withdraw" element={<PlaceholderPage title="Withdrawal" />} />
         <Route path="/app/help" element={<PlaceholderPage title="How to trade" />} />
       </Route>
       <Route path="/app" element={<Navigate to="/app/trade" replace />} />

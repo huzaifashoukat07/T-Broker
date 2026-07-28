@@ -182,8 +182,6 @@ const MODAL_ROUTES = {
   '/wallet': () => showTransactions(),
   '/top': () => showLeaderboard(),
   '/help': () => openModal('#help-modal'),
-  '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); prepDeposit(); },
-  '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); prepWithdraw(); },
 };
 const TITLES = {
   '/login': 'Log in',
@@ -746,12 +744,12 @@ $('#asset-btn').addEventListener('click', () => {
 });
 $('#asset-search').addEventListener('input', () => renderAssetList($('#asset-search').value));
 
-$('#deposit-btn').addEventListener('click', () => navigate('/deposit'));
-$('#withdraw-btn').addEventListener('click', () => navigate('/withdraw'));
+$('#deposit-btn').addEventListener('click', () => { location.href = '/deposit'; });
+$('#withdraw-btn').addEventListener('click', () => { location.href = '/withdraw'; });
 // balance dropdown + avatar menu entries (main way to reach these on mobile)
-$('#bm-deposit-btn').addEventListener('click', () => { $('#balance-menu').classList.add('hidden'); navigate('/deposit'); });
-$('#bm-withdraw-btn').addEventListener('click', () => { $('#balance-menu').classList.add('hidden'); navigate('/withdraw'); });
-$('#menu-withdraw-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/withdraw'); });
+$('#bm-deposit-btn').addEventListener('click', () => { location.href = '/deposit'; });
+$('#bm-withdraw-btn').addEventListener('click', () => { location.href = '/withdraw'; });
+$('#menu-withdraw-btn').addEventListener('click', () => { location.href = '/withdraw'; });
 $('#rail-help').addEventListener('click', () => navigate('/help'));
 
 $('#deposit-quick').addEventListener('click', (e) => {

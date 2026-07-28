@@ -2,9 +2,10 @@ import { configureStore } from '@reduxjs/toolkit';
 import { useDispatch, useSelector } from 'react-redux';
 import authReducer from '../features/auth/authSlice';
 import adminReducer from '../features/admin/adminSlice';
+import walletReducer from '../features/wallet/walletSlice';
 
 export const store = configureStore({
-  reducer: { auth: authReducer, admin: adminReducer },
+  reducer: { auth: authReducer, admin: adminReducer, wallet: walletReducer },
 });
 
 export type RootState = ReturnType<typeof store.getState>;

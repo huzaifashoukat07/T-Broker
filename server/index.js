@@ -102,7 +102,7 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
 // from their counterparts on the original frontend. Anything not listed here
 // falls through to the original app below, so migration is page by page.
 // A missing build (never compiled) also falls through, leaving the site up.
-const REACT_ROUTES = /^\/(login|admin|app)(\/.*)?$/;
+const REACT_ROUTES = /^\/(login|admin|deposit|withdraw|app)(\/.*)?$/;
 app.get(REACT_ROUTES, (req, res, next) => {
   if (path.extname(req.path)) return next(); // let static assets resolve
   res.sendFile(path.join(__dirname, '..', 'public', 'app', 'index.html'), (err) => {
