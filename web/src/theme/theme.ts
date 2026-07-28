@@ -43,6 +43,26 @@ export const theme = createTheme({
           '&:hover fieldset': { borderColor: tokens.border },
           '&.Mui-focused fieldset': { borderColor: tokens.accent },
         },
+        input: {
+          // Chrome paints saved credentials with its own pale background and
+          // near-black text, which is unreadable on a dark form. There is no
+          // way to set that background directly, so cover it with an inset
+          // shadow and force the text colour. The absurd transition delay
+          // stops Chrome animating its colour back in on focus.
+          '&:-webkit-autofill, &:-webkit-autofill:hover, &:-webkit-autofill:focus, &:-webkit-autofill:active': {
+            WebkitBoxShadow: `0 0 0 100px ${tokens.bg2} inset`,
+            WebkitTextFillColor: tokens.text,
+            caretColor: tokens.text,
+            borderRadius: 'inherit',
+            transition: 'background-color 600000s 0s, color 600000s 0s',
+          },
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        // Keep the floating label legible where it sits over the border
+        root: { '&.Mui-focused': { color: tokens.accent } },
       },
     },
     MuiButton: {
