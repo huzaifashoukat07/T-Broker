@@ -1,11 +1,13 @@
 {
   "name": "novatrade",
   "version": "1.0.0",
-  "description": "NovaTrade — a Quotex-style binary options trading platform with live simulated markets, demo & live accounts, and real-time trade settlement.",
+  "description": "NovaTrade \u2014 a Quotex-style binary options trading platform with live simulated markets, demo & live accounts, and real-time trade settlement.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "build:web": "npm --prefix web install --include=dev --no-audit --no-fund && npm --prefix web run build",
+    "postinstall": "npm run build:web || echo '[build] React app not built \u2014 /app unavailable, main site unaffected'"
   },
   "engines": {
     "node": ">=18"
