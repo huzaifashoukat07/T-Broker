@@ -1,4 +1,4 @@
-import { Box, Stack } from '@mui/material';
+import { Box, Stack, useMediaQuery, useTheme } from '@mui/material';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   ShowChart, EmojiEvents, AccountBalanceWallet, HelpOutline, AdminPanelSettings,
@@ -24,6 +24,9 @@ const NAV = [
  */
 export default function AppLayout() {
   const user = useAppSelector((s) => s.auth.user);
+  // On a phone the rail becomes a bottom bar: 68px of fixed side navigation
+  // is width these screens cannot spare.
+  const compact = useMediaQuery(useTheme().breakpoints.down('sm'));
   const items = user?.isAdmin
     ? [...NAV, { to: '/admin', label: 'Admin', Icon: AdminPanelSettings, external: false }]
     : NAV;
@@ -42,12 +45,19 @@ export default function AppLayout() {
         <Box sx={{ fontSize: 13, color: tokens.muted }}>{user?.email}</Box>
       </Box>
 
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: compact ? 'column-reverse' : 'row' }}>
         <Stack
           component="nav"
+          direction={compact ? 'row' : 'column'}
           sx={{
-            width: 68, flex: 'none', py: 1, gap: 0.5, alignItems: 'stretch',
-            bgcolor: tokens.panel, borderRight: `1px solid ${tokens.border}`,
+            flex: 'none', gap: 0.5, bgcolor: tokens.panel,
+            ...(compact
+              ? {
+                  py: 0.5, px: 0.5, justifyContent: 'space-around',
+                  borderTop: `1px solid ${tokens.border}`,
+                  pb: 'calc(4px + env(safe-area-inset-bottom))',
+                }
+              : { width: 68, py: 1, alignItems: 'stretch', borderRight: `1px solid ${tokens.border}` }),
           }}
         >
           {items.map(({ to, label, Icon, external }) => (
@@ -57,6 +67,7 @@ export default function AppLayout() {
               sx={{
                 textDecoration: 'none', color: tokens.muted, textAlign: 'center',
                 py: 1.2, mx: 0.75, borderRadius: 2, fontSize: 11, fontWeight: 700,
+                ...(compact ? { flex: 1, mx: 0.25, py: 0.9 } : null),
                 '&:hover': { bgcolor: 'rgba(255,255,255,.04)' },
                 '&.active': { bgcolor: 'rgba(47,124,246,.14)', color: tokens.accent },
               }}

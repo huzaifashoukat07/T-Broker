@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack,
+  Button, Dialog, useMediaQuery, useTheme, DialogActions, DialogContent, DialogTitle, MenuItem, Stack,
   TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../app/store';
@@ -12,6 +12,7 @@ export default function AdjustBalanceDialog({
 }: { user: AdminUser | null; onClose: () => void }) {
   const dispatch = useAppDispatch();
   const search = useAppSelector((s) => s.admin.search);
+  const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'));
   const [direction, setDirection] = useState<'credit' | 'debit'>('credit');
   const [account, setAccount] = useState<'live' | 'demo'>('live');
   const [amount, setAmount] = useState('100');
@@ -39,7 +40,7 @@ export default function AdjustBalanceDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog open onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="xs">
       <DialogTitle>Adjust balance</DialogTitle>
       <DialogContent>
         <Typography color="text.secondary" fontSize={13} sx={{ mb: 2 }}>

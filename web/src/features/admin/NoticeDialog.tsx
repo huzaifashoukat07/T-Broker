@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Avatar, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Avatar, Box, Button, Dialog, useMediaQuery, useTheme, DialogActions, DialogContent, DialogTitle,
   MenuItem, Stack, TextField, Typography,
 } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../../app/store';
@@ -13,6 +13,7 @@ export default function NoticeDialog({
 }: { user: AdminUser | null; onClose: () => void }) {
   const dispatch = useAppDispatch();
   const templates = useAppSelector((s) => s.admin.templates);
+  const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'));
   const [template, setTemplate] = useState('reinstated');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -36,7 +37,7 @@ export default function NoticeDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
       <DialogTitle>Send notice</DialogTitle>
       <DialogContent>
         <Stack direction="row" spacing={1.5} alignItems="center"
