@@ -49,6 +49,16 @@ const MIN_POLL_MS = 5000;
 const MAX_POLL_MS = 60000;
 // A quote that hasn't moved for this long is treated as a closed market.
 const FROZEN_MS = 20 * 60 * 1000;
+// A market we know is closed only needs checking often enough to notice it
+// reopening. Polling it at full rate burns the daily credit allowance on
+// symbols that cannot move — which is what used to leave nothing in the
+// budget by the time the session actually opened.
+// 3 minutes: cheap enough that a whole weekend costs only a few hundred
+// credits, quick enough that traders aren't left on OTC long after the
+// session opens.
+const CLOSED_RECHECK_MS = Number(process.env.TWELVEDATA_CLOSED_RECHECK_MS) || 3 * 60 * 1000;
+
+const utcDay = () => new Date().toISOString().slice(0, 10);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 
@@ -133,6 +143,14 @@ class FxFeed {
     this.stopped = false;
     this.lastOk = 0;
     this.stale = new Map(); // assetId -> { price, since } for frozen-quote detection
+    this.recheckAt = new Map(); // assetId -> when a closed market is next checked
+    // Daily credit allowance (Basic/free = 800; paid plans have no daily cap).
+    // Spending is tracked per UTC day so an exhausted budget waits for the
+    // reset instead of hammering the API for 429s.
+    this.dailyCap = Number(process.env.TWELVEDATA_CREDITS_PER_DAY) || 0;
+    this.spentDay = utcDay();
+    this.spent = 0;
+    this.capWarned = false;
   }
 
   async start() {
@@ -141,7 +159,14 @@ class FxFeed {
       return;
     }
     if (!this.symbols.size) return;
-    console.log(`[fx] Twelve Data enabled for ${this.symbols.size} assets — polling every ${Math.round(this.pollMs / 1000)}s (${this.budget} credits/min budget)`);
+    console.log(`[fx] Twelve Data enabled for ${this.symbols.size} assets — polling every ${Math.round(this.pollMs / 1000)}s (${this.budget} credits/min${this.dailyCap ? `, ${this.dailyCap}/day` : ''})`);
+    if (this.dailyCap) {
+      const perDay = Math.floor((86400000 / this.pollMs)) * this.symbols.size;
+      if (perDay > this.dailyCap) {
+        const hours = (this.dailyCap / this.symbols.size) * (this.pollMs / 3600000);
+        console.log(`[fx] note: at this rate ${this.symbols.size} symbols would need ~${perDay} credits/day but the plan allows ${this.dailyCap} — expect about ${hours.toFixed(1)}h of live prices per day, OTC for the rest. Closed markets are only rechecked every ${CLOSED_RECHECK_MS / 60000}min, so the allowance is spent while markets are actually open.`);
+      }
+    }
     // Quotes first so prices go live straight away, then backfill history in
     // the background — on a small plan seeding takes minutes, and waiting for
     // it would leave the whole board simulated until it finished.
@@ -188,7 +213,11 @@ class FxFeed {
   }
 
   async fetchSeries(symbol, interval) {
+    // History costs credits too — without this the backfill could quietly
+    // drain a small daily allowance before any quote was ever fetched.
+    if (!this.canSpend(1)) throw new Error('daily credit allowance spent');
     await this.bucket.take(1);
+    this.spend(1);
     const url = `${API_BASE}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}`
       + `&outputsize=600&timezone=UTC&apikey=${this.key}`;
     const data = await getJSON(url);
@@ -211,7 +240,23 @@ class FxFeed {
   // market keeps serving its last close forever, which would otherwise look
   // like a perfectly healthy feed and leave a frozen "LIVE" chart all weekend.
   async tick() {
-    const entries = [...this.symbols.entries()];
+    const now = Date.now();
+    // Only poll symbols that are actually worth a credit: everything open,
+    // plus closed markets that are due a reopening check.
+    const entries = [...this.symbols.entries()].filter(([assetId]) => {
+      const next = this.recheckAt.get(assetId);
+      return !next || now >= next;
+    });
+    if (!entries.length) { this.lastOk = now; return; } // all closed, none due
+    if (!this.canSpend(entries.length)) {
+      // No budget left to prove these markets are live, so stop claiming they
+      // are: hand them to OTC now instead of leaving a stale "LIVE" badge
+      // until the staleness watchdog trips.
+      for (const [assetId] of this.symbols) this.market.setGuided(assetId, false);
+      this.lastOk = now;
+      return;
+    }
+
     let applied = 0;
     let closed = 0;
     let lastError = null;
@@ -220,6 +265,7 @@ class FxFeed {
       const symbols = group.map(([, s]) => s);
       try {
         await this.bucket.take(symbols.length);
+        this.spend(symbols.length);
         const url = `${API_BASE}/quote?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${this.key}`;
         const data = await getJSON(url);
         const err = apiError(data);
@@ -237,11 +283,20 @@ class FxFeed {
             }
             this.market.setGuided(assetId, false);
             this.stale.delete(assetId);
+            // don't spend further credits on it until it might have reopened
+            this.recheckAt.set(assetId, Date.now() + CLOSED_RECHECK_MS);
             closed++;
             continue;
           }
           if (!Number.isFinite(price) || price <= 0) continue;
-          if (this.isFrozen(assetId, price)) { closed++; continue; }
+          if (this.isFrozen(assetId, price)) {
+            this.recheckAt.set(assetId, Date.now() + CLOSED_RECHECK_MS);
+            closed++;
+            continue;
+          }
+          if (this.recheckAt.delete(assetId)) {
+            console.log(`[fx] ${assetId}: market reopened — back to live prices`);
+          }
           this.market.setTarget(assetId, price);
           applied++;
         }
@@ -252,6 +307,36 @@ class FxFeed {
     // An all-closed market is a success, not a failure — don't back off for it.
     if (!applied && !closed) throw lastError || new Error('no prices in response');
     this.lastOk = Date.now();
+  }
+
+  // --- daily credit budget ----------------------------------------------
+  // Plans with a daily cap (Basic/free = 800) are tracked per UTC day so the
+  // allowance is spent on open markets rather than exhausted overnight.
+
+  rollDay() {
+    const today = utcDay();
+    if (today !== this.spentDay) {
+      if (this.spent) console.log(`[fx] daily credit usage reset (${this.spent} used on ${this.spentDay})`);
+      this.spentDay = today;
+      this.spent = 0;
+      this.capWarned = false;
+    }
+  }
+
+  canSpend(n) {
+    this.rollDay();
+    if (!this.dailyCap) return true;
+    if (this.spent + n <= this.dailyCap) return true;
+    if (!this.capWarned) {
+      this.capWarned = true;
+      console.log(`[fx] daily credit allowance spent (${this.spent}/${this.dailyCap}) — assets trade as OTC until it resets at 00:00 UTC`);
+    }
+    return false;
+  }
+
+  spend(n) {
+    this.rollDay();
+    this.spent += n;
   }
 
   // Safety net for symbols the provider doesn't flag: a price that hasn't
