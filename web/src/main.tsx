@@ -12,8 +12,9 @@ createRoot(document.getElementById('root')!).render(
     <Provider store={store}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        {/* served under /app while the vanilla site still owns / */}
-        <BrowserRouter basename="/app">
+        {/* No basename: React owns real top-level URLs like /login. Its
+            static assets stay namespaced under /app/assets by the Vite base. */}
+        <BrowserRouter>
           <App />
         </BrowserRouter>
       </ThemeProvider>

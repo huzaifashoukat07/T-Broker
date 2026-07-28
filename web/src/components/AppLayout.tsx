@@ -8,10 +8,10 @@ import { tokens } from '../theme/theme';
 import { useAppSelector } from '../app/store';
 
 const NAV = [
-  { to: '/trade', label: 'Trade', Icon: ShowChart },
-  { to: '/top', label: 'Top', Icon: EmojiEvents },
-  { to: '/wallet', label: 'Wallet', Icon: AccountBalanceWallet },
-  { to: '/help', label: 'Help', Icon: HelpOutline },
+  { to: '/app/trade', label: 'Trade', Icon: ShowChart },
+  { to: '/app/top', label: 'Top', Icon: EmojiEvents },
+  { to: '/app/wallet', label: 'Wallet', Icon: AccountBalanceWallet },
+  { to: '/app/help', label: 'Help', Icon: HelpOutline },
 ];
 
 /**
@@ -22,7 +22,7 @@ const NAV = [
 export default function AppLayout() {
   const user = useAppSelector((s) => s.auth.user);
   const items = user?.isAdmin
-    ? [...NAV, { to: '/admin', label: 'Admin', Icon: AdminPanelSettings }]
+    ? [...NAV, { to: '/app/admin', label: 'Admin', Icon: AdminPanelSettings }]
     : NAV;
 
   return (

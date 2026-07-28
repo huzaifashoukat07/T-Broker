@@ -97,10 +97,13 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
 
-// The React rewrite is served under /app while the current site keeps /.
-// Both talk to the same API, so pages can be migrated one at a time without
-// a flag day. Falls through when public/app doesn't exist (not built yet).
-app.get(/^\/app(\/.*)?$/, (req, res, next) => {
+// Routes owned by the React frontend. Sign-in holds the real /login URL;
+// screens still being ported are parked under /app/* until they take over
+// from their counterparts on the original frontend. Anything not listed here
+// falls through to the original app below, so migration is page by page.
+// A missing build (never compiled) also falls through, leaving the site up.
+const REACT_ROUTES = /^\/(login|app)(\/.*)?$/;
+app.get(REACT_ROUTES, (req, res, next) => {
   if (path.extname(req.path)) return next(); // let static assets resolve
   res.sendFile(path.join(__dirname, '..', 'public', 'app', 'index.html'), (err) => {
     if (err) next();

@@ -17,12 +17,18 @@ same `tb_token` in localStorage.
     src/pages/      one component per route — each is a full screen
     src/theme/      MUI theme built from the existing design tokens
 
-## Ported so far
+## Routing during the migration
 
-- `/app/login` — sign up, log in, forgot password, OTP step, resend cooldown
-- `/app/wallet` — balances and transaction history
+A page moves to React by adding its real path to `REACT_ROUTES` in
+`server/index.js`; everything else keeps falling through to the original
+frontend. Sign-in has already made that move and owns `/login` outright.
+Screens not yet live sit under `/app/*` as a preview.
+
+- `/login` — **live**: sign up, log in, forgot password, OTP, resend cooldown.
+  Hands off to `/trade` on the original frontend once authenticated.
+- `/app/wallet` — preview: balances and transaction history
 - `/app/trade`, `/app/top`, `/app/deposit`, `/app/withdraw`, `/app/help`,
-  `/app/admin` — placeholders, still served by the vanilla site at `/`
+  `/app/admin` — placeholders; the originals still serve these paths
 
 ## Notes for the rest of the port
 

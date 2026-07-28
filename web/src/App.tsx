@@ -12,13 +12,13 @@ import PlaceholderPage from './pages/PlaceholderPage';
 
 const TITLES: Record<string, string> = {
   '/login': 'Log in',
-  '/trade': 'Trade',
-  '/wallet': 'Transactions',
-  '/top': 'Top traders',
-  '/deposit': 'Deposit',
-  '/withdraw': 'Withdrawal',
-  '/help': 'How to trade',
-  '/admin': 'Admin',
+  '/app/trade': 'Trade',
+  '/app/wallet': 'Transactions',
+  '/app/top': 'Top traders',
+  '/app/deposit': 'Deposit',
+  '/app/withdraw': 'Withdrawal',
+  '/app/help': 'How to trade',
+  '/app/admin': 'Admin',
 };
 
 export default function App() {
@@ -42,11 +42,14 @@ export default function App() {
     );
   }
 
-  // Every route below renders a full screen of its own — no page is drawn as
-  // an overlay on top of the trading chart.
+  // Sign-in owns the real /login URL. Screens still being ported live under
+  // /app/* until they replace their counterparts on the original frontend.
+  // Every route renders a full screen of its own — nothing is drawn as an
+  // overlay on top of the trading chart.
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/app/login" element={<Navigate to="/login" replace />} />
       <Route
         element={
           <RequireAuth>
@@ -54,15 +57,16 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/trade" element={<TradePage />} />
-        <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/top" element={<PlaceholderPage title="Top traders" />} />
-        <Route path="/deposit" element={<PlaceholderPage title="Deposit" />} />
-        <Route path="/withdraw" element={<PlaceholderPage title="Withdrawal" />} />
-        <Route path="/help" element={<PlaceholderPage title="How to trade" />} />
-        <Route path="/admin" element={<PlaceholderPage title="Admin panel" />} />
+        <Route path="/app/trade" element={<TradePage />} />
+        <Route path="/app/wallet" element={<WalletPage />} />
+        <Route path="/app/top" element={<PlaceholderPage title="Top traders" />} />
+        <Route path="/app/deposit" element={<PlaceholderPage title="Deposit" />} />
+        <Route path="/app/withdraw" element={<PlaceholderPage title="Withdrawal" />} />
+        <Route path="/app/help" element={<PlaceholderPage title="How to trade" />} />
+        <Route path="/app/admin" element={<PlaceholderPage title="Admin panel" />} />
       </Route>
-      <Route path="*" element={<Navigate to="/trade" replace />} />
+      <Route path="/app" element={<Navigate to="/app/trade" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }
