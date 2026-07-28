@@ -1,9 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { useDispatch, useSelector } from 'react-redux';
 import authReducer from '../features/auth/authSlice';
+import adminReducer from '../features/admin/adminSlice';
 
 export const store = configureStore({
-  reducer: { auth: authReducer },
+  reducer: { auth: authReducer, admin: adminReducer },
 });
 
 export type RootState = ReturnType<typeof store.getState>;

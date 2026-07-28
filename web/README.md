@@ -26,9 +26,12 @@ Screens not yet live sit under `/app/*` as a preview.
 
 - `/login` — **live**: sign up, log in, forgot password, OTP, resend cooldown.
   Hands off to `/trade` on the original frontend once authenticated.
+- `/app/admin` — preview: pending requests, account management, balance
+  adjustments, block/unblock, branded notice emails. Counts stay live via the
+  server's `admin_refresh` push.
 - `/app/wallet` — preview: balances and transaction history
-- `/app/trade`, `/app/top`, `/app/deposit`, `/app/withdraw`, `/app/help`,
-  `/app/admin` — placeholders; the originals still serve these paths
+- `/app/trade`, `/app/top`, `/app/deposit`, `/app/withdraw`, `/app/help` —
+  placeholders; the originals still serve these paths
 
 ## Notes for the rest of the port
 

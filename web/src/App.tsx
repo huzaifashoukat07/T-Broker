@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 import TradePage from './pages/TradePage';
 import WalletPage from './pages/WalletPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import AdminPage from './pages/AdminPage';
 
 const TITLES: Record<string, string> = {
   '/login': 'Log in',
@@ -63,7 +64,7 @@ export default function App() {
         <Route path="/app/deposit" element={<PlaceholderPage title="Deposit" />} />
         <Route path="/app/withdraw" element={<PlaceholderPage title="Withdrawal" />} />
         <Route path="/app/help" element={<PlaceholderPage title="How to trade" />} />
-        <Route path="/app/admin" element={<PlaceholderPage title="Admin panel" />} />
+        <Route path="/app/admin" element={<AdminPage />} />
       </Route>
       <Route path="/app" element={<Navigate to="/app/trade" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
