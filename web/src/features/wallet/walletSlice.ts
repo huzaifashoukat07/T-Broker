@@ -27,6 +27,8 @@ interface WalletState {
   /** deposit addresses + generated QR codes, keyed by network */
   wallets: Record<string, Wallet>;
   promoPct: number;
+  /** server-resolved path to the Binance Pay QR image, null if absent */
+  binanceQr: string | null;
   transactions: Transaction[];
   loadingTx: boolean;
   submitting: boolean;
@@ -39,6 +41,7 @@ interface WalletState {
 const initialState: WalletState = {
   wallets: {},
   promoPct: 100,
+  binanceQr: null,
   transactions: [],
   loadingTx: false,
   submitting: false,
@@ -51,7 +54,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : 'Something wen
 
 /** Wallet addresses, QR codes and the promo percentage come from /api/assets. */
 export const fetchWalletConfig = createAsyncThunk('wallet/config', () =>
-  api<{ wallets: Record<string, Wallet>; promo: { pct: number } }>('/api/assets'));
+  api<{ wallets: Record<string, Wallet>; promo: { pct: number }; binanceQr: string | null }>('/api/assets'));
 
 export const fetchTransactions = createAsyncThunk('wallet/transactions', () =>
   api<{ transactions: Transaction[] }>('/api/transactions'));
@@ -99,6 +102,7 @@ const walletSlice = createSlice({
       .addCase(fetchWalletConfig.fulfilled, (state, action) => {
         state.wallets = action.payload.wallets || {};
         state.promoPct = action.payload.promo?.pct ?? 100;
+        state.binanceQr = action.payload.binanceQr ?? null;
       })
       .addCase(fetchTransactions.pending, (state) => { state.loadingTx = true; })
       .addCase(fetchTransactions.fulfilled, (state, action) => {

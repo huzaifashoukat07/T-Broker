@@ -62,6 +62,21 @@ const WALLETS = {
     network: 'Tron (TRC20)',
   },
 };
+// The Binance Pay QR is an image the operator drops into public/img by hand,
+// so its extension varies. Resolve it once here rather than letting the
+// browser guess and collect 404s.
+const BINANCE_QR = (() => {
+  const dir = path.join(__dirname, '..', 'public', 'img');
+  for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {
+    try {
+      require('fs').accessSync(path.join(dir, `binance-qr.${ext}`));
+      return `/img/binance-qr.${ext}`;
+    } catch { /* try the next extension */ }
+  }
+  return null;
+})();
+console.log(BINANCE_QR ? `[wallet] Binance Pay QR: ${BINANCE_QR}` : '[wallet] no Binance Pay QR image found in public/img');
+
 const walletQr = {};
 (async () => {
   try {
@@ -212,6 +227,7 @@ app.get('/api/assets', handle((req, res) => {
       net, { ...w, qr: walletQr[net] || null },
     ])),
     promo: { pct: PROMO_BONUS_PCT },
+    binanceQr: BINANCE_QR,
   });
 }));
 

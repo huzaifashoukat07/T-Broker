@@ -25,7 +25,7 @@ const WALLET_KEY: Partial<Record<PayMethod, string>> = {
 export default function DepositPage() {
   const dispatch = useAppDispatch();
   const user = useAppSelector((s) => s.auth.user);
-  const { wallets, promoPct, transactions, submitting, error, lastDeposit } =
+  const { wallets, promoPct, binanceQr, transactions, submitting, error, lastDeposit } =
     useAppSelector((s) => s.wallet);
 
   const [method, setMethod] = useState<PayMethod>('binance');
@@ -164,9 +164,25 @@ export default function DepositPage() {
           {method === 'binance' && (
             <>
               <Divider sx={{ my: 2 }} />
+              <Typography fontSize={11} fontWeight={800} color="text.secondary">
+                SCAN WITH BINANCE PAY
+              </Typography>
+              {binanceQr ? (
+                <Box
+                  component="img" src={binanceQr} alt="Binance Pay QR code"
+                  sx={{
+                    display: 'block', width: 200, maxWidth: '100%', mx: 'auto',
+                    my: 1.5, borderRadius: 2, bgcolor: '#fff', p: 1,
+                  }}
+                />
+              ) : (
+                <Alert severity="warning" sx={{ mt: 1.5, fontSize: 12.5 }}>
+                  The Binance Pay QR image is missing. Contact support for payment details.
+                </Alert>
+              )}
               <Alert severity="info" sx={{ fontSize: 12.5 }}>
-                Open Binance → Pay → Scan, and send to the NovaTrade merchant QR shown after
-                you submit. Tell support your Binance ID if the payment needs matching.
+                Open Binance → Pay → Scan and pay the amount above. Keep the transaction ID
+                in case support needs to match your payment.
               </Alert>
             </>
           )}

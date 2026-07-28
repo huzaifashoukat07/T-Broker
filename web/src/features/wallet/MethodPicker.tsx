@@ -1,21 +1,23 @@
+import type { ReactNode } from 'react';
 import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
 import type { PayMethod } from './walletSlice';
 import { tokens } from '../../theme/theme';
+import { BankIcon, BinanceIcon, CardIcon, UsdtIcon } from './PayIcons';
 
 interface Option {
   id: PayMethod | 'card' | 'bank';
   label: string;
   sub: string;
-  icon: string;
+  icon: ReactNode;
   soon?: boolean;
 }
 
 const OPTIONS: Option[] = [
-  { id: 'binance', label: 'Binance Pay', sub: 'Instant · no network fee', icon: '🟡' },
-  { id: 'usdt-bep20', label: 'USDT — BEP20', sub: 'BNB Smart Chain', icon: '💠' },
-  { id: 'usdt-trc20', label: 'USDT — TRC20', sub: 'Tron network', icon: '🔴' },
-  { id: 'card', label: 'Credit / debit card', sub: 'Visa · Mastercard', icon: '💳', soon: true },
-  { id: 'bank', label: 'Bank transfer', sub: 'Local bank', icon: '🏦', soon: true },
+  { id: 'binance', label: 'Binance Pay', sub: 'Instant · no network fee', icon: <BinanceIcon /> },
+  { id: 'usdt-bep20', label: 'USDT — BEP20', sub: 'BNB Smart Chain', icon: <UsdtIcon network="bep20" /> },
+  { id: 'usdt-trc20', label: 'USDT — TRC20', sub: 'Tron network', icon: <UsdtIcon network="trc20" /> },
+  { id: 'card', label: 'Credit / debit card', sub: 'Visa · Mastercard', icon: <CardIcon />, soon: true },
+  { id: 'bank', label: 'Bank transfer', sub: 'Local bank', icon: <BankIcon />, soon: true },
 ];
 
 /** Payment-method tiles shared by the deposit and withdrawal screens. */
@@ -47,7 +49,7 @@ export default function MethodPicker({
               '&:hover': o.soon ? undefined : { borderColor: tokens.accent },
             }}
           >
-            <Box sx={{ fontSize: 22, lineHeight: 1 }}>{o.icon}</Box>
+            <Box sx={{ display: 'flex', color: tokens.muted }}>{o.icon}</Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography fontSize={13.5} fontWeight={700}>{o.label}</Typography>
               <Typography fontSize={11.5} color="text.secondary">{o.sub}</Typography>
