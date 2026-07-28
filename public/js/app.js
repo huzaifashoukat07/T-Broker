@@ -184,10 +184,6 @@ const MODAL_ROUTES = {
   '/help': () => openModal('#help-modal'),
   '/deposit': () => { openModal('#deposit-modal'); syncDepositMethod(); prepDeposit(); },
   '/withdraw': () => { openModal('#withdraw-modal'); syncWithdrawMethod(); prepWithdraw(); },
-  '/admin': () => {
-    if (!state.user?.isAdmin) return navigate('/trade', true);
-    showAdmin();
-  },
 };
 const TITLES = {
   '/login': 'Log in',
@@ -1123,7 +1119,7 @@ $('#admin-users-list').addEventListener('click', async (e) => {
   }
 });
 
-$('#menu-admin-btn').addEventListener('click', () => { $('#user-menu').classList.add('hidden'); navigate('/admin'); });
+$('#menu-admin-btn').addEventListener('click', () => { location.href = '/admin'; });
 
 async function showLeaderboard() {
   openModal('#top-modal');

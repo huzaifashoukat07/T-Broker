@@ -26,7 +26,7 @@ Screens not yet live sit under `/app/*` as a preview.
 
 - `/login` — **live**: sign up, log in, forgot password, OTP, resend cooldown.
   Hands off to `/trade` on the original frontend once authenticated.
-- `/app/admin` — preview: pending requests, account management, balance
+- `/admin` — **live**: pending requests, account management, balance
   adjustments, block/unblock, branded notice emails. Counts stay live via the
   server's `admin_refresh` push.
 - `/app/wallet` — preview: balances and transaction history

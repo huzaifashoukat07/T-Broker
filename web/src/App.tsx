@@ -4,6 +4,7 @@ import { Box, CircularProgress } from '@mui/material';
 import { useAppDispatch, useAppSelector } from './app/store';
 import { loadSession } from './features/auth/authSlice';
 import RequireAuth from './components/RequireAuth';
+import RequireAdmin from './components/RequireAdmin';
 import AppLayout from './components/AppLayout';
 import LoginPage from './pages/LoginPage';
 import TradePage from './pages/TradePage';
@@ -13,6 +14,7 @@ import AdminPage from './pages/AdminPage';
 
 const TITLES: Record<string, string> = {
   '/login': 'Log in',
+  '/admin': 'Admin',
   '/app/trade': 'Trade',
   '/app/wallet': 'Transactions',
   '/app/top': 'Top traders',
@@ -53,6 +55,16 @@ export default function App() {
       <Route path="/app/login" element={<Navigate to="/login" replace />} />
       <Route
         element={
+          <RequireAdmin>
+            <AppLayout />
+          </RequireAdmin>
+        }
+      >
+        <Route path="/admin" element={<AdminPage />} />
+      </Route>
+      <Route path="/app/admin" element={<Navigate to="/admin" replace />} />
+      <Route
+        element={
           <RequireAuth>
             <AppLayout />
           </RequireAuth>
@@ -64,7 +76,6 @@ export default function App() {
         <Route path="/app/deposit" element={<PlaceholderPage title="Deposit" />} />
         <Route path="/app/withdraw" element={<PlaceholderPage title="Withdrawal" />} />
         <Route path="/app/help" element={<PlaceholderPage title="How to trade" />} />
-        <Route path="/app/admin" element={<AdminPage />} />
       </Route>
       <Route path="/app" element={<Navigate to="/app/trade" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

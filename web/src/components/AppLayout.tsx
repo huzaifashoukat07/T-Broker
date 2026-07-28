@@ -7,11 +7,14 @@ import BrandMark from './BrandMark';
 import { tokens } from '../theme/theme';
 import { useAppSelector } from '../app/store';
 
+// `external: true` marks a screen still served by the original frontend, so
+// it needs a real navigation rather than a client-side route. As each one is
+// ported the flag comes off and the link becomes internal.
 const NAV = [
-  { to: '/app/trade', label: 'Trade', Icon: ShowChart },
-  { to: '/app/top', label: 'Top', Icon: EmojiEvents },
-  { to: '/app/wallet', label: 'Wallet', Icon: AccountBalanceWallet },
-  { to: '/app/help', label: 'Help', Icon: HelpOutline },
+  { to: '/trade', label: 'Trade', Icon: ShowChart, external: true },
+  { to: '/top', label: 'Top', Icon: EmojiEvents, external: true },
+  { to: '/wallet', label: 'Wallet', Icon: AccountBalanceWallet, external: true },
+  { to: '/help', label: 'Help', Icon: HelpOutline, external: true },
 ];
 
 /**
@@ -22,7 +25,7 @@ const NAV = [
 export default function AppLayout() {
   const user = useAppSelector((s) => s.auth.user);
   const items = user?.isAdmin
-    ? [...NAV, { to: '/app/admin', label: 'Admin', Icon: AdminPanelSettings }]
+    ? [...NAV, { to: '/admin', label: 'Admin', Icon: AdminPanelSettings, external: false }]
     : NAV;
 
   return (
@@ -47,11 +50,10 @@ export default function AppLayout() {
             bgcolor: tokens.panel, borderRight: `1px solid ${tokens.border}`,
           }}
         >
-          {items.map(({ to, label, Icon }) => (
+          {items.map(({ to, label, Icon, external }) => (
             <Box
               key={to}
-              component={NavLink}
-              to={to}
+              {...(external ? { component: 'a' as const, href: to } : { component: NavLink, to })}
               sx={{
                 textDecoration: 'none', color: tokens.muted, textAlign: 'center',
                 py: 1.2, mx: 0.75, borderRadius: 2, fontSize: 11, fontWeight: 700,
