@@ -60,6 +60,19 @@ const CLOSED_RECHECK_MS = Number(process.env.TWELVEDATA_CLOSED_RECHECK_MS) || 3 
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 
+// "09:00-17:00" -> { from, to } in minutes past UTC midnight (may wrap).
+function parseWindow(spec) {
+  const m = String(spec || '').match(/^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$/);
+  if (!m) return null;
+  const from = (+m[1]) * 60 + (+m[2]);
+  const to = (+m[3]) * 60 + (+m[4]);
+  return from === to ? null : { from, to };
+}
+
+function windowLengthMs({ from, to }) {
+  return ((to > from ? to - from : 1440 - from + to)) * 60000;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 
 // Paces every request — history seeding and quote polling alike — against the
@@ -114,9 +127,10 @@ function parseTime(dt) {
 }
 
 class FxFeed {
-  constructor(market, onHistory) {
+  constructor(market, onHistory, store) {
     this.market = market;
     this.onHistory = onHistory; // tell connected charts to reload this asset
+    this.store = store;         // credit usage survives restarts via Mongo
     this.key = process.env.TWELVEDATA_API_KEY || '';
     this.symbols = new Map(); // assetId -> 'EUR/USD'
     // TWELVEDATA_SYMBOLS can narrow the live set (e.g. "EURUSD,GBPUSD,XAUUSD"),
@@ -136,9 +150,23 @@ class FxFeed {
     // more symbols than a minute's allowance — bigger sets are split and the
     // chunks are spent across the cycle.
     this.chunk = Math.max(1, Math.min(this.symbols.size, Math.floor(this.budget)));
-    // Polling is sized to ~70% of the allowance so the background history
-    // load still gets credits; at 100% the seeding queue would never drain.
-    this.pollMs = Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, Math.ceil((this.symbols.size * 60000) / (this.budget * 0.7))));
+    // Optional UTC window to concentrate the budget in, e.g. "09:00-17:00".
+    this.window = parseWindow(process.env.TWELVEDATA_ACTIVE_HOURS);
+
+    // Polling is sized to ~70% of the per-minute allowance so the background
+    // history load still gets credits; at 100% the seeding queue never drains.
+    const rateMs = Math.ceil((this.symbols.size * 60000) / (this.budget * 0.7));
+    // ...but the per-minute rate is not the real constraint on a capped plan.
+    // Spread the DAILY allowance evenly across the hours we intend to be live,
+    // otherwise the whole budget is gone within the first couple of hours —
+    // and cutting symbols just makes it poll faster, not last longer.
+    let budgetMs = 0;
+    if (this.dailyCap) {
+      const activeMs = this.window ? windowLengthMs(this.window) : 86400000;
+      const pollsAffordable = Math.max(1, Math.floor(this.dailyCap / this.symbols.size));
+      budgetMs = Math.ceil(activeMs / pollsAffordable);
+    }
+    this.pollMs = Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, rateMs, budgetMs));
     this.basePollMs = this.pollMs;
     this.stopped = false;
     this.lastOk = 0;
@@ -159,13 +187,14 @@ class FxFeed {
       return;
     }
     if (!this.symbols.size) return;
-    console.log(`[fx] Twelve Data enabled for ${this.symbols.size} assets — polling every ${Math.round(this.pollMs / 1000)}s (${this.budget} credits/min${this.dailyCap ? `, ${this.dailyCap}/day` : ''})`);
+    await this.loadSpend();
+    const win = this.window ? ` within ${process.env.TWELVEDATA_ACTIVE_HOURS} UTC` : '';
+    console.log(`[fx] Twelve Data enabled for ${this.symbols.size} assets — polling every ${Math.round(this.pollMs / 1000)}s${win} (${this.budget} credits/min${this.dailyCap ? `, ${this.dailyCap}/day` : ''})`);
     if (this.dailyCap) {
-      const perDay = Math.floor((86400000 / this.pollMs)) * this.symbols.size;
-      if (perDay > this.dailyCap) {
-        const hours = (this.dailyCap / this.symbols.size) * (this.pollMs / 3600000);
-        console.log(`[fx] note: at this rate ${this.symbols.size} symbols would need ~${perDay} credits/day but the plan allows ${this.dailyCap} — expect about ${hours.toFixed(1)}h of live prices per day, OTC for the rest. Closed markets are only rechecked every ${CLOSED_RECHECK_MS / 60000}min, so the allowance is spent while markets are actually open.`);
-      }
+      const activeMs = this.window ? windowLengthMs(this.window) : 86400000;
+      const coversMs = Math.floor(this.dailyCap / this.symbols.size) * this.pollMs;
+      const covered = Math.min(coversMs, activeMs) / 3600000;
+      console.log(`[fx] budget: ${this.dailyCap} credits/day ÷ ${this.symbols.size} symbols = ${Math.floor(this.dailyCap / this.symbols.size)} polls, covering ~${covered.toFixed(1)}h${win ? ' of the window' : ' per day'}. Fewer symbols does NOT extend this on its own — the interval scales with them.`);
     }
     // Quotes first so prices go live straight away, then backfill history in
     // the background — on a small plan seeding takes minutes, and waiting for
@@ -190,6 +219,13 @@ class FxFeed {
   // as the real price, which saves a quote request per asset.
   async seedAll() {
     for (const [assetId, symbol] of this.symbols) {
+      // Don't buy history we can't use: outside the live window these assets
+      // trade as OTC anyway, and a free host that restarts often would spend
+      // a slice of the allowance on every boot.
+      if (!this.inActiveWindow()) {
+        console.log('[fx] outside the live window — skipping history load to preserve credits');
+        return;
+      }
       try {
         const candles = {};
         for (const [tf, interval] of Object.entries(HISTORY_INTERVALS)) {
@@ -247,6 +283,22 @@ class FxFeed {
       const next = this.recheckAt.get(assetId);
       return !next || now >= next;
     });
+    // Outside the configured live window we buy nothing at all, so the whole
+    // allowance is available when it matters.
+    if (!this.inActiveWindow()) {
+      if (!this.windowIdle) {
+        this.windowIdle = true;
+        console.log(`[fx] outside the live window (${process.env.TWELVEDATA_ACTIVE_HOURS} UTC) — assets trade as OTC, no credits spent`);
+        for (const [assetId] of this.symbols) this.market.setGuided(assetId, false);
+      }
+      this.lastOk = now;
+      return;
+    }
+    if (this.windowIdle) {
+      this.windowIdle = false;
+      console.log('[fx] live window open — buying quotes again');
+    }
+
     if (!entries.length) { this.lastOk = now; return; } // all closed, none due
     if (!this.canSpend(entries.length)) {
       // No budget left to prove these markets are live, so stop claiming they
@@ -313,6 +365,35 @@ class FxFeed {
   // Plans with a daily cap (Basic/free = 800) are tracked per UTC day so the
   // allowance is spent on open markets rather than exhausted overnight.
 
+  // Credit usage is persisted: without it every redeploy starts the count at
+  // zero while the provider's own counter keeps running, so the server
+  // immediately overspends and gets 429s it has no way to anticipate.
+  async loadSpend() {
+    const meta = this.store?.db?.collection('meta');
+    if (!meta) return;
+    try {
+      const doc = await meta.findOne({ _id: 'fx' });
+      if (doc && doc.day === utcDay()) {
+        this.spentDay = doc.day;
+        this.spent = doc.spent || 0;
+        if (this.spent) console.log(`[fx] resuming today's credit usage: ${this.spent}${this.dailyCap ? `/${this.dailyCap}` : ''} already spent`);
+      }
+    } catch (e) {
+      console.log(`[fx] could not read credit usage (${e.message})`);
+    }
+  }
+
+  saveSpend() {
+    const meta = this.store?.db?.collection('meta');
+    if (!meta) return;
+    clearTimeout(this.spendTimer);
+    this.spendTimer = setTimeout(() => {
+      meta.updateOne({ _id: 'fx' }, { $set: { day: this.spentDay, spent: this.spent } }, { upsert: true })
+        .catch((e) => console.log(`[fx] could not persist credit usage (${e.message})`));
+    }, 2000);
+    this.spendTimer.unref?.();
+  }
+
   rollDay() {
     const today = utcDay();
     if (today !== this.spentDay) {
@@ -320,7 +401,18 @@ class FxFeed {
       this.spentDay = today;
       this.spent = 0;
       this.capWarned = false;
+      this.saveSpend();
     }
+  }
+
+  // Optional daily window (UTC) during which live prices are bought, e.g.
+  // TWELVEDATA_ACTIVE_HOURS=09:00-17:00. Outside it nothing is polled, so the
+  // whole allowance is spent when your traders are actually online.
+  inActiveWindow(now = new Date()) {
+    if (!this.window) return true;
+    const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const { from, to } = this.window;
+    return from <= to ? (mins >= from && mins < to) : (mins >= from || mins < to);
   }
 
   canSpend(n) {
@@ -337,6 +429,7 @@ class FxFeed {
   spend(n) {
     this.rollDay();
     this.spent += n;
+    this.saveSpend();
   }
 
   // Safety net for symbols the provider doesn't flag: a price that hasn't

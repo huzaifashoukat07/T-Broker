@@ -647,7 +647,7 @@ function settleExpired() {
 
   // Real forex / metals / stock prices from Twelve Data (needs an API key).
   // Charts get real history, then track live quotes; falls back to simulation.
-  const fxFeed = new FxFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }));
+  const fxFeed = new FxFeed(market, (assetId) => broadcastAll({ type: 'candles_changed', asset: assetId }), store);
   fxFeed.start().catch((e) => console.log(`[fx] disabled: ${e.message}`));
 
   // Daily real-price anchoring for forex/metals/stocks via Alpha Vantage.
