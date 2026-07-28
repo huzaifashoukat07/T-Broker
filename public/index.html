@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NovaTrade — Online Trading Platform</title>
-<link rel="icon" type="image/png" href="img/favicon.png">
-<link rel="apple-touch-icon" href="img/favicon.png">
+<link rel="icon" type="image/png" href="/img/favicon.png">
+<link rel="apple-touch-icon" href="/img/favicon.png">
 <meta name="theme-color" content="#0b0f19">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
@@ -289,7 +289,7 @@
       </div>
       <div class="bp-qr">
         <div class="qr-spin" id="binance-qr-spin"><span></span>Loading QR…</div>
-        <img src="img/binance-qr.png" alt="Binance Pay QR code" id="binance-qr-img" style="display:none"
+        <img src="/img/binance-qr.png" alt="Binance Pay QR code" id="binance-qr-img" style="display:none"
              data-fallbacks="img/binance-qr.jpg,img/binance-qr.jpeg"
              onload="this.style.display='inline-block';document.getElementById('binance-qr-spin').style.display='none';"
              onerror="var f=(this.dataset.fallbacks||'').split(',').filter(Boolean);if(f.length){this.dataset.fallbacks=f.slice(1).join(',');this.src=f[0];}else{this.style.display='none';document.getElementById('binance-qr-spin').style.display='none';document.getElementById('binance-qr-missing').style.display='block';}">
@@ -444,8 +444,8 @@
 
 <div class="toasts" id="toasts"></div>
 
-<script src="vendor/lightweight-charts.standalone.production.js"></script>
-<script src="js/tvchart.js"></script>
-<script src="js/app.js"></script>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/js/tvchart.js"></script>
+<script src="/js/app.js"></script>
 </body>
 </html>
