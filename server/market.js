@@ -25,6 +25,14 @@ const TIMEFRAMES = [5, 15, 30, 60, 300, 3600, 86400]; // seconds (5s … 1h, 1D)
 const MAX_CANDLES = 600; // per timeframe: 600×1D ≈ 20 months of history
 const TICK_MS = 500;
 
+// Momentum is an AR(1) process, so it persists across ticks and compounds:
+// the cumulative move ends up (1 + kick/(1-decay)) times the per-tick noise.
+// Naming the constants lets the calibration divide that factor back out, so
+// tuning the feel of the trend can't silently change the volatility.
+const MOM_DECAY = 0.98;
+const MOM_KICK = 0.1;
+const MOMENTUM_GAIN = 1 + MOM_KICK / (1 - MOM_DECAY);
+
 function gauss() {
   // Box-Muller
   let u = 0, v = 0;
@@ -89,17 +97,53 @@ class Market {
   }
 
   step(a) {
+    const g = gauss();
+    // Volatility clustering. Without it every candle comes out the same
+    // height, which is the giveaway that a chart is generated: real markets
+    // alternate between quiet stretches and bursts. |g| feeds the state so
+    // violence begets violence, decaying back toward calm.
+    a.volState = Math.max(0.4, Math.min(4, (a.volState ?? 1) * 0.995 + Math.abs(g) * 0.006));
+    // a.vol is the instrument's true per-tick deviation; MOMENTUM_GAIN divides
+    // it out so the trending term doesn't inflate the total beyond reality.
+    const v = (a.vol * a.volState) / MOMENTUM_GAIN;
+
     // Momentum decays and gets random kicks -> trending behaviour
-    a.momentum = a.momentum * 0.98 + gauss() * a.vol * 0.1;
-    if (Math.random() < 0.001) a.momentum += (Math.random() < 0.5 ? -1 : 1) * a.vol * 2; // news spike
+    a.momentum = a.momentum * MOM_DECAY + g * v * MOM_KICK;
+    if (Math.random() < 0.001) a.momentum += (Math.random() < 0.5 ? -1 : 1) * v * 2; // news spike
     // Pull toward the latest real quote when a polled feed is guiding this
     // asset (strong, so the gap closes within a few seconds), otherwise a
     // gentle drift back to the seed price.
     const anchor = a.guided && a.target ? a.target : a.base;
     const pull = a.guided && a.target ? 0.12 : 0.002;
     const reversion = (anchor - a.price) / anchor * pull;
-    const change = gauss() * a.vol + a.momentum + reversion;
-    a.price = a.price * (1 + change);
+    a.price = a.price * (1 + g * v + a.momentum + reversion);
+  }
+
+  // Measure how much the instrument actually moves, from real 1-minute
+  // candles, and use that as the simulator's per-tick volatility. The
+  // built-in figures are rough guesses — EUR/USD was running about 2.4x its
+  // true volatility, which is why generated candles looked far larger than
+  // the same pair on an external chart.
+  calibrateVol(id, minuteCandles) {
+    const a = this.assets.get(id);
+    if (!a || !minuteCandles || minuteCandles.length < 30) return;
+    const returns = [];
+    for (let i = 1; i < minuteCandles.length; i++) {
+      const prev = minuteCandles[i - 1].c;
+      const cur = minuteCandles[i].c;
+      if (prev > 0 && cur > 0) returns.push(Math.log(cur / prev));
+    }
+    if (returns.length < 20) return;
+    const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+    const perMinute = Math.sqrt(variance);
+    // a random walk's deviation scales with the square root of time
+    const perTick = perMinute / Math.sqrt(60000 / TICK_MS);
+    if (!Number.isFinite(perTick) || perTick <= 0) return;
+    const before = a.vol;
+    a.vol = perTick;
+    a.volCalibrated = true;
+    console.log(`[market] ${id}: volatility calibrated from real candles — ${before.toExponential(2)} -> ${perTick.toExponential(2)} per tick`);
   }
 
   applyTick(a, tSec) {
@@ -293,6 +337,9 @@ class Market {
       a.price = newest[newest.length - 1].c;
       a.base = a.price;
     }
+    // Real 1-minute history is the best measure of this instrument's true
+    // volatility, so use it to calibrate the motion between quotes.
+    if (candlesByTf[60]) this.calibrateVol(id, candlesByTf[60]);
     this.resetOtcChain(id);
   }
 
